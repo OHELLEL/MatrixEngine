@@ -2,7 +2,7 @@
 
 MatrixEngine is a rich yet simple javascript library for Data/Image Processing, MatrixEngine is declarative and asynchronous, and it uses web workers to process data, so it doesn't block the main thread. 
 
-# Browser compatibility: 
+# Browser Support: 
 
     | Chrome | Edge | Firefox | Internet Explore | Opera | Safari |
     ---------------------------------------------------------------
