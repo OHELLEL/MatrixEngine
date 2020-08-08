@@ -614,6 +614,8 @@ MatrixEngine provies a number of usefull lightweight methods that runs on the ma
 
     - _conjugate()_ : returns a matrix of the conjugate of each element in the matrix.
 
+    - _stroke(points, brush)_ : we provide an array of coordinates => [point(i, j, intensity)......] => and a structuring Element as brush to print those coordinates inside the matrix.
+
 6. The "filterGen(type, size, parameter)" Method:
     This method generates the kernel of famous image Processing filters such as the "Gaussian" filter.
 
@@ -652,7 +654,7 @@ MatrixEngine provies a number of usefull lightweight methods that runs on the ma
 
 11. The "point(x1, x2, x3, ..... xn)" Method:
 
-    returns a coordinate (point) in the R<sup>n</sup> vector space.
+    returns a coordinate (a point) in the R<sup>n</sup> vector space.
 
 12. The "vector(x1, x2, x3, ..... xn)" Method:
 
@@ -701,6 +703,10 @@ MatrixEngine provies a number of usefull lightweight methods that runs on the ma
 
     - propertyName: the name of the property that we want to extract (e.g: fft2d or hist).
     - indicies: index or indicies of the targeted matricies (integer or an array of integers).
+
+20. The "pushDownStream()" Method:
+
+    takes any number of values (matricies) and push them down stream for further processing using the step() or run() methods or displaying using the "printToDOM()" method. 
 
 ## Set Methods (applies to: realSet, complexSet, pointSet, vectorSet): 
 

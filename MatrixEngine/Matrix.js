@@ -191,6 +191,8 @@ export default class MatrixEngine {
 
                 return promise;
             }
+        } else if (typeof(input) === "string" && input === "rgba") {
+            return this.printToDOM([0, 1, 2, 3], querySelector, alpha, css)
         }
     } 
 
@@ -791,6 +793,18 @@ export default class MatrixEngine {
             return promise;
         }
     }  
+
+    pushDownStream() {
+        let args    = arguments;
+        let promise = new Promise( (resolve) => {
+            let Data = [];
+            for (let i = 0; i < args.length; i++) {
+                Data.push(args[i]);
+            }
+            resolve(Data);
+        })
+        return promise;
+    }
 }
 
 function radToDeg(rads) {
@@ -1720,6 +1734,26 @@ class MatrixOperations {
         })
         return output;
     }
+
+    stroke(points, brush) {
+        let i, j, ib, jb, color;
+        if ( Array.isArray(points) ) {
+            for (let k = 0; k < points.length; k++) {
+                i     = points[k][0];
+                j     = points[k][1];
+                color = points[k][2];
+                if (color === undefined) { color = 255 };
+                for (let l = 0; l < brush.collection.length; l++) {
+                    ib = i + brush.collection[l][0];
+                    jb = j + brush.collection[l][1];
+                    if ( ib >= 0 && ib < this.nR &&  jb >= 0 && jb < this.nC ) {
+                        this.data(ib, jb, color);
+                    }
+                }
+            }
+        }
+        return this;
+    }
 }
 
 class ComplexNumber extends ComplexOperations {
@@ -2006,6 +2040,7 @@ class Vector extends VectorOperations {
 class RealSet {
     constructor() {
         this.collection = [];
+        this.type       = "RealSet"
     }
 
     has(element) {
@@ -2084,7 +2119,7 @@ class RealSet {
 class ComplexSet {
     constructor() {
         this.collection = [];
-
+        this.type       = "ComplexSet"
     }
 
     has(element) {
@@ -2171,6 +2206,7 @@ class ComplexSet {
 class VectorSet {
     constructor() {
         this.collection = [];
+        this.type       = "VectorSet"
     }
 
     has(element) {
@@ -2275,6 +2311,7 @@ class VectorSet {
 class PointSet {
     constructor() {
         this.collection = [];
+        this.type       = "PointSet"
     }
 
     has(element) {
@@ -2294,6 +2331,7 @@ class PointSet {
 
     add(element) {
         if ( element.type === "Point" ) {
+            this.collection.push(element);
             if ( !this.has(element) ) {
                 this.collection.push(element);
                 return true;
