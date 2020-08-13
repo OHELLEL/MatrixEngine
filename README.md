@@ -322,9 +322,9 @@ MatrixEngine provies a number of usefull lightweight methods that runs on the ma
         Engine.readImage(link)
         .then( Engine.printToDOM([0, 1], "body", true) )
     ```
-3. The "updateCanvas(querySelector, input)" Method :
+3. The "updateCanvas(querySelector, indicies)" Method :
 
-    This method update a canvas selected by a query selector or passed as a reference by the specified matricies in the input argument, input: can be a number or an array of indicies.
+    This method update a canvas that is selected by a query selector or passed as a reference by the specified matricies in the indicies Array (indicies can be an integer if you want to print a single matrix);
 
 4. The "downloadImage(indicies, alpha)" Method: 
 
@@ -614,7 +614,24 @@ MatrixEngine provies a number of usefull lightweight methods that runs on the ma
 
     - _conjugate()_ : returns a matrix of the conjugate of each element in the matrix.
 
-    - _stroke(points, brush)_ : we provide an array of coordinates => [point(i, j, intensity)......] => and a structuring Element as brush to print those coordinates inside the matrix.
+    - _transpose()_ : returns the transpose of the current matrix.
+
+    - _times(m)_ : returns the result of the matrix product of the current matrix and the input matrix: m.
+
+    - _mArray()_: returns a multidimentional array version of the matrix.
+
+    - _forEach(callback, thisArg)_ : calls a provided callback function once for each element in the current matrix starting from the top left to the bottom right. 'callback' is invoked with three arguments: the value of the element, the indicies: {i: i, j: j} of the element, the matrix object being traversed, If a 'thisArg' parameter is provided to forEach(), it will be used as callback's **this** value.
+
+    - _printToDOM(querySelector, css)_ : creates a canvas and prints the current matrix into it (grayScale) and appends the canvas to the specified parent, the parent can be specified using a querySelector or a refrence variable. optional: the css parameter is an object that holds the string value of the id and class of the created canvas: {id: id, class: class}.
+
+    - _updateCanvas(querySelector)_: updates the selected canvas by the content of the current matrix.
+
+    - _evalp(x, output = "array", input = "real")_: this method considers the rows coefficients of the current matrix as single variable polynomials coefficients and returns the value of each polynomial at value 'x'. output: specifies the output type: "array" or "matrix", input: specifies the nature of the coefficients and the input ("complex" or "real")
+
+    - _evalp2(x, y, output = "array", input = "real")_: this method considers the rows coefficients of the current matrix as two variable polynomials  coefficients and returns the value of each polynomial at value 'x'. output: specifies the output type: "array" or "matrix", input: specifies the nature of the coefficients and the input ("complex" or "real")
+
+    - _evalpM(matrix, output = "array", input = "real", k = 0)_: evaluates the current polynomial for each value in the provided 'matrix'
+
 
 6. The "filterGen(type, size, parameter)" Method:
     This method generates the kernel of famous image Processing filters such as the "Gaussian" filter.
@@ -708,6 +725,12 @@ MatrixEngine provies a number of usefull lightweight methods that runs on the ma
 
     takes any number of values (matricies) and push them down stream for further processing using the step() or run() methods or displaying using the "printToDOM()" method. 
 
+
+21. The "pascalsCoef(n)" Method: 
+    
+    this methods returns a row matrix containing the pascals coefficients for a polynomial of order n.
+
+22. 
 ## Set Methods (applies to: realSet, complexSet, pointSet, vectorSet): 
 
     - has(element): checks if the current set has the provided element.
@@ -944,6 +967,7 @@ MatrixEngine provies a number of usefull lightweight methods that runs on the ma
     - {operation: "cannyEdgeDetection",  args: [thresholds,Gausian,edgeDetector,unit], components: indicies} : thresholds = {tL: 50, tH: 200}, Gausian = {size: 3, sigma: 0.6} , edgeDetector = {type: "sobel", size: 3, parameter: 0.7}, unit = "deg" 
     - {operation: "threshold",           args: [T,min,max,data], components: indicies}
     - {operation: "OTSUThreshold",       args: [data], components: indicies}
+    - {operation: "erode",               args: [structuringElement,T], components: indicies}
     - {operation: "erode",               args: [structuringElement,T], components: indicies}
 
     ```js

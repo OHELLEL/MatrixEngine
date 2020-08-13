@@ -1,9 +1,11 @@
-export default class MatrixEngine {  
+// API
+class MatrixEngine {  
     constructor() {
         let path = import.meta.url;
         this.path = path.replace("Matrix.js", "");   // "./matrixEngineJS"
     }
 
+    // DOM OPERATIONS: 
     readImage(link) {
         let promise;
         promise = new Promise((resolve) => {
@@ -235,13 +237,11 @@ export default class MatrixEngine {
         } else if ( typeof(input) === "number" ) {
             return function (matrixArray) {
                 let canvas, ctx, imageData, index;
-
                 if (querySelector instanceof Element) {
                     canvas = querySelector;
                 } else if ( typeof(querySelector) === "string" ) {
                     canvas = document.querySelector(querySelector);
                 }
-
                 canvas.style.width  = matrixArray[input].nC;
                 canvas.style.height = matrixArray[input].nR;
                 canvas.width        = matrixArray[input].nC;
@@ -341,9 +341,49 @@ export default class MatrixEngine {
 
                 return promise;
             }
+        }  else if (typeof(input) === "string" && input === "rgba") {
+            return function (matrixArray) {
+                let canvas, ctx, imageData, index;
+                if (querySelector instanceof Element) {
+                    canvas = querySelector;
+                } else if ( typeof(querySelector) === "string" ) {
+                    canvas = document.querySelector(querySelector);
+                } else if ( querySelector === undefined ) {
+                    canvas = document.body;
+                }
+                canvas.style.width  = matrixArray[0].nC;
+                canvas.style.height = matrixArray[0].nR;
+                canvas.width        = matrixArray[0].nC;
+                canvas.height       = matrixArray[0].nR;
+                ctx                 = canvas.getContext('2d');
+                imageData           = new ImageData(matrixArray[0].nC, matrixArray[0].nR);
+                if ( css !== undefined ) {
+                    if ( typeof(css.id) === "string" ) {
+                        canvas.id = css.id;
+                    }
+                    if ( typeof(css.class) === "string" ) {
+                        canvas.classList.push(css.class);
+                    }
+                }
+                for (let i = 0; i < matrixArray[0].nR; i++) {
+                    for (let j = 0; j < matrixArray[0].nC; j++) {  
+                        index = (i * matrixArray[0].nC + j) * 4;
+                        for (let l = 0; l < 4; l++) {
+                            imageData.data[index+l] = matrixArray[l].content[i][j];
+                        }
+                    }
+                }
+
+                ctx.putImageData(imageData, 0, 0);
+                let promise  = new Promise( ( resolve ) => {
+                    resolve(matrixArray);
+                })
+
+                return promise;
+            }
         }
     } 
-    
+
     downloadImage(input, alpha) {
         if ( Array.isArray(input) ) {
             return function (matrixArray) {
@@ -449,6 +489,59 @@ export default class MatrixEngine {
         }
     }
 
+    log() {
+        return function(data) {
+            console.log(data);
+            return data;
+        }
+    }
+
+    sideToMain(name, index) {
+        return function(data) {
+            if (typeof(index) === "number" ) {
+                if ( data[index][name] !== undefined ) {
+                    if (Array.isArray(data[index][name])) {
+                        return data[index][name];
+                    } else {
+                        return [data[index][name]]
+                    }
+                }
+            } else if ( index === undefined ) {
+                let output = [];
+                for (let i = 0; i < data.length; i++) {
+                    if (data[i][name] !== undefined) {
+                        output.push( data[i][name] );
+                    }
+                }
+                return output;
+            } else if ( Array.isArray(index) ) {
+                let output = [];
+                for (let i = 0; i < data.length; i++) {
+                    if (index.indexOf(i) !== -1) {
+                        if (data[i][name] !== undefined) {
+                            output.push( data[i][name] );
+                        }
+                    }
+                }
+                return output;
+            }
+
+        }
+    }
+
+    pushDownStream(matricies) {
+        let args    = arguments;
+        let promise = new Promise( (resolve) => {
+            let Data = [];
+            for (let i = 0; i < args.length; i++) {
+                Data.push(args[i]);
+            }
+            resolve(Data);
+        })
+        return promise;
+    }
+
+    // Matrix Creation Methods:
     matrix(data, nR = 3, nC = 3) {
         if (isMatrixArray(data)) {    
             let nR = data.length;
@@ -468,65 +561,6 @@ export default class MatrixEngine {
         } else { 
             let m  = new MatrixStruc(3, 3, 0);
             return m;
-        }
-    }
-
-    filterGen(type = "average", size = 3, param = 0.2) {
-        let h;
-        if (size%2 === 1) {
-            if (type === "average") {
-                let aF     = size * size;
-                    h       = new MatrixStruc(size, size, 1/aF);
-            } else if (type === "gaussian") {
-                let center = Math.floor(size/2);
-                h      = new MatrixStruc(size, size, (i, j) => {
-                    return Math.exp( - ( ( Math.pow(i-center, 2) + Math.pow(j-center, 2) ) ) / (2 * Math.pow(param, 2)) )
-                })
-                let sum   = h.sum().re;
-                h = h.etimes(1/sum);
-            } else if (type === "sobel") {
-                h = this.matrix([
-                    [ 1,  2,  1 ],
-                    [ 0,  0,  0 ],
-                    [-1, -2, -1 ]
-                ])
-            } else if (type === "laplacian") {
-                if (param <= 1 && param >= 0) {
-                    h = matrix([
-                        [ (param/4)  ,  (1-param)/4,  (param/4)   ],
-                        [ (1-param)/4,  -1         ,  (1-param)/4 ],
-                        [ (param/4)  ,  (1-param)/4,  (param/4)   ]
-                    ])
-                }
-                h = h.etimes( 4/(param+1));
-            } else if (type === "log") {
-                let center = Math.floor(size/2);
-                let hg     = new MatrixStruc(size, size, (i, j) => { return Math.exp( - ( ( Math.pow(i-center, 2) + Math.pow(j-center, 2) ) ) / (2 * Math.pow(param, 2)) ); })
-                let sum    = hg.sum().re * Math.pow(param, 4);
-                h   = new MatrixStruc(size, size, (i, j) => {
-                    return ( hg.data(i,j) / sum ) * ( Math.pow(i-center, 2) + Math.pow(j-center, 2) - 2 * Math.pow(param, 2) )
-                })
-            } else if (type === "prewitt") {
-                h = matrix([
-                    [ 1,  1,  1 ],
-                    [ 0,  0,  0 ],
-                    [-1, -1, -1 ]
-                ])
-            } else if (type === "disk") {
-                let center = Math.floor( (2*size+1) / 2 );
-                    h      = new MatrixStruc(2*size+1, 2*size+1, (i, j) => {
-                    if ( Math.pow( (i-center) , 2 )  + Math.pow( (j-center) , 2 ) <= Math.pow(size, 2) ) {
-                        return 1;
-                    } else {
-                        return 0;
-                    };
-                })
-                let sum = h.sum().re;
-                h = h.etimes(1/sum);
-            } 
-            return h.round(6);
-        } else {
-            console.log("The size must be an odd integer")
         }
     }
 
@@ -561,6 +595,98 @@ export default class MatrixEngine {
         return m;
     }
 
+    filterGen(type = "average", size = 3, param = 0.2) {
+        let h;
+        if (size%2 === 1) {
+            if (type === "average") {
+                let aF     = size * size;
+                    h       = new MatrixStruc(size, size, 1/aF);
+            } else if (type === "gaussian") {
+                let center = Math.floor(size/2);
+                h      = new MatrixStruc(size, size, (i, j) => {
+                    return Math.exp( - ( ( Math.pow(i-center, 2) + Math.pow(j-center, 2) ) ) / (2 * Math.pow(param, 2)) )
+                })
+                let sum   = h.sum().re;
+                h = h.etimes(1/sum);
+            } else if (type === "sobel") {
+                h = this.matrix([
+                    [ 1,  2,  1 ],
+                    [ 0,  0,  0 ],
+                    [-1, -2, -1 ]
+                ])
+            } else if (type === "laplacian") {
+                if (param <= 1 && param >= 0) {
+                    h = this.matrix([
+                        [ (param/4)  ,  (1-param)/4,  (param/4)   ],
+                        [ (1-param)/4,  -1         ,  (1-param)/4 ],
+                        [ (param/4)  ,  (1-param)/4,  (param/4)   ]
+                    ])
+                }
+                h = h.etimes( 4/(param+1));
+            } else if (type === "log") {
+                let center = Math.floor(size/2);
+                let hg     = new MatrixStruc(size, size, (i, j) => { return Math.exp( - ( ( Math.pow(i-center, 2) + Math.pow(j-center, 2) ) ) / (2 * Math.pow(param, 2)) ); })
+                let sum    = hg.sum().re * Math.pow(param, 4);
+                h   = new MatrixStruc(size, size, (i, j) => {
+                    return ( hg.data(i,j) / sum ) * ( Math.pow(i-center, 2) + Math.pow(j-center, 2) - 2 * Math.pow(param, 2) )
+                })
+            } else if (type === "prewitt") {
+                h = this.matrix([
+                    [ 1,  1,  1 ],
+                    [ 0,  0,  0 ],
+                    [-1, -1, -1 ]
+                ])
+            } else if (type === "disk") {
+                let center = Math.floor( (2*size+1) / 2 );
+                    h      = new MatrixStruc(2*size+1, 2*size+1, (i, j) => {
+                    if ( Math.pow( (i-center) , 2 )  + Math.pow( (j-center) , 2 ) <= Math.pow(size, 2) ) {
+                        return 1;
+                    } else {
+                        return 0;
+                    };
+                })
+                let sum = h.sum().re;
+                h = h.etimes(1/sum);
+            } 
+            return h.round(6);
+        } else {
+            console.log("The size must be an odd integer")
+        }
+    }
+
+    pascalsCoef(n) {
+        let m, coef, value, output;
+        m = new MatrixStruc(n+1, n+1, (i, j) => {
+            if (i===0 || j===0) {
+                return 1;
+            } else {
+                return 0;
+            }
+        })
+
+        coef = [];
+        for (let i = 0; i <= n; i++) {
+            for (let j = 0; j <= n; j++) {
+                if (i > 0 && j > 0) {
+                    value = m.content[i][j-1] + m.content[i-1][j];
+                    m.content[i][j] = value;
+                    if ( (i+j) === n ) {
+                        coef.push(value);
+                    }
+                } else {
+                    if ( (i+j) === n ) {
+                        coef.push(m.content[i][j])
+                    }
+                }
+                
+            }
+        }
+        
+        output = this.matrix(coef);
+        return output;
+    }
+    
+    // Other Data Types
     complex(re, im) {
         let output;
         if (arguments.length === 0) {
@@ -611,13 +737,7 @@ export default class MatrixEngine {
         return set;
     }
 
-    log() {
-        return function(data) {
-            console.log(data);
-            return data;
-        }
-    }
-
+    // Set Creation
     structuringElement() {
         let a, b, c, d, e, f, g, h, structure, point, R, Rx, Ry, center;
             a = arguments[0]; // type.
@@ -692,38 +812,7 @@ export default class MatrixEngine {
         return structure;
     }
 
-    sideToMain(name, index) {
-        return function(data) {
-            if (typeof(index) === "number" ) {
-                if ( data[index][name] !== undefined ) {
-                    if (Array.isArray(data[index][name])) {
-                        return data[index][name];
-                    } else {
-                        return [data[index][name]]
-                    }
-                }
-            } else if ( index === undefined ) {
-                let output = [];
-                for (let i = 0; i < data.length; i++) {
-                    if (data[i][name] !== undefined) {
-                        output.push( data[i][name] );
-                    }
-                }
-                return output;
-            } else if ( Array.isArray(index) ) {
-                let output = [];
-                for (let i = 0; i < data.length; i++) {
-                    if (index.indexOf(i) !== -1) {
-                        if (data[i][name] !== undefined) {
-                            output.push( data[i][name] );
-                        }
-                    }
-                }
-                return output;
-            }
-
-        }
-    }
+    // Engine Methods:
 
     step({operation , args, components}) {
         let path    = this.path;
@@ -793,107 +882,9 @@ export default class MatrixEngine {
             return promise;
         }
     }  
-
-    pushDownStream() {
-        let args    = arguments;
-        let promise = new Promise( (resolve) => {
-            let Data = [];
-            for (let i = 0; i < args.length; i++) {
-                Data.push(args[i]);
-            }
-            resolve(Data);
-        })
-        return promise;
-    }
 }
 
-function radToDeg(rads) {
-    if (rads.constructor.name === "MatrixStruc") {
-        let output = new MatrixStruc(rads.nR, rads.nC);
-        for (let i = 0; i < rads.nR; i++) {
-            for (let j = 0; j < rads.nC; j++) {
-                output.data( i, j, (rads.data(i, j) * (Math.PI / 180)) );
-            }
-        }
-        return output;
-    } else if (typeof(rads) === "number") {
-        let output = rads / (Math.PI / 180);
-        return output;
-    }
-}
-
-function complex(re, im) {
-    let output;
-    if (arguments.length === 0) {
-        output = new ComplexNumber(0, 0);
-    } else if (arguments.length === 1) {
-        if (typeof(re) === "number") {
-            output = new ComplexNumber(re, 0);
-        } else if ( (re.re !== undefined) && (re.im !== undefined)) {
-            output = new ComplexNumber(re.re, re.im);
-            return output;
-        }
-    } else if (arguments.length === 2) {
-        if  ( (re !== undefined && typeof(re) === "number" ) || (im !== undefined  && typeof(im) === "number" ) ) {
-            output = new ComplexNumber(re, im);
-            return output;
-        }
-    }
-    return output;
-}
-
-function isArrayOfNumbers(data) {
-    if (Array.isArray(data)) {
-        let isIt = true;
-        for (let i = 0; i < data.length; i++) {
-            if (typeof(data[i]) !== "number" && (data[i].re !== undefined && data[i].im !== undefined)) {
-                isIt = false;
-                break;
-            }
-        }
-        return isIt;
-    } else {
-        let isIt = false;
-        return isIt;
-    }
-}
-
-function isArrayOfArrays(data) {
-    if(Array.isArray(data)) {
-        let isIt = true;
-        for (let i = 0; i < data.length; i++) {
-            if ( Array.isArray(data[i]) ) {
-                continue;
-            } else {
-                isIt = false;
-                break;
-            }
-        }
-        return isIt;
-    }
-}
-
-function isMatrixArray(data) {
-    if (isArrayOfArrays(data)) {
-        let isIt = true;
-        let L = data[0].length;
-        for (let i = 0; i < data.length; i++) {
-            if (!isArrayOfNumbers(data[i])) {
-                isIt = false;
-                break;
-            } else {
-                if (L !== data[i].length) {
-                    isIt = false;
-                    break;
-                }
-            }
-        }
-        return isIt;
-    } else {
-        let isIt = false;
-        return isIt;
-    }    
-}
+// Super Classes:
 
 class ComplexOperations {
     isNull() {
@@ -1114,10 +1105,79 @@ class ComplexOperations {
 }
 
 class MatrixOperations {  
-    type() {
-        return this.constructor.name;
+    // *
+    forEach( callback, thisArg ) {
+        let value, position, matrix;
+        for (let i = 0; i < this.nR; i++) {
+            for (let j = 0; j < this.nC; j++) {
+                value = this.content[i][j];
+                position = {i, j};
+                matrix = this;
+                callback.apply( thisArg, [value, position, matrix])
+            }
+        }
+        return this;
     }
-    
+
+    mArray() {
+        let output = [];
+        if (this.nR === 1) {
+            for (let j = 0; j < this.nC; j++) {
+                output.push( this.content[0][j] )
+            }
+        } else if ( this.nR > 1 ) {
+            for (let i = 0; i < this.nR; i++) {
+                output.push([]);
+                for (let j = 0; j < this.nC; j++) {
+                    output[i].push( this.content[i][j] )
+                }
+            } 
+        }
+
+        return output;
+    }
+
+    print(type = "javascript") {
+        let output;
+        if (type === "javascript") {
+            output = "[\n";
+            for (let i = 0; i < this.nR; i++) {
+                output = output + "[ ";
+                for (let j = 0; j < this.nC; j++) {
+                    if ( j < this.nC - 1) {
+                        if ( typeof(this.content[i][j]) === "number" ) {
+                            output =  output + this.content[i][j].toString()  + ", "  ;
+                        } else if ( this.content[i][j].re !== undefined && this.content[i][j].im !== undefined ) {
+                            output =  output + "'" + this.content[i][j].print() + "'"  + ", " ;
+                        }
+                    } else {
+                        if ( typeof(this.content[i][j]) === "number" ) {
+                            output =  output + this.content[i][j].toString()  ;
+                        } else if ( this.content[i][j].re !== undefined && this.content[i][j].im !== undefined ) {
+                            output =  output + "'" + this.content[i][j].print() + "'" ;
+                        }
+                    }
+                }
+                output = output + " ],\n";
+            }  
+            output = output + "]"
+        } else if (type === "matlab") {
+            output = "[\n";
+            for (let i = 0; i < this.nR; i++) {
+                for (let j = 0; j < this.nC; j++) {
+                    if ( typeof(this.content[i][j]) === "number" ) {
+                        output =  output + " " + this.content[i][j].toString();
+                    } else if ( this.content[i][j].re !== undefined && this.content[i][j].im !== undefined ) {
+                        output =  output + " " + this.content[i][j].print();
+                    }
+                }
+                output = output + ";\n";
+            }   
+            output = output + "]"
+        }
+        return output;
+    }
+
     size() {
         return {nR: this.nR, nC: this.nC};
     }
@@ -1161,59 +1221,7 @@ class MatrixOperations {
             }
         }
     }
-    
-    print(type = "javascript") {
-        let output;
-        if (type === "javascript") {
-            output = "[\n";
-            for (let i = 0; i < this.nR; i++) {
-                output = output + "[ ";
-                for (let j = 0; j < this.nC; j++) {
-                    if ( j < this.nC - 1) {
-                        if ( typeof(this.content[i][j]) === "number" ) {
-                            output =  output + this.content[i][j].toString()  + ", "  ;
-                        } else if ( this.content[i][j].re !== undefined && this.content[i][j].im !== undefined ) {
-                            output =  output + "'" + this.content[i][j].print() + "'"  + ", " ;
-                        }
-                    } else {
-                        if ( typeof(this.content[i][j]) === "number" ) {
-                            output =  output + this.content[i][j].toString()  ;
-                        } else if ( this.content[i][j].re !== undefined && this.content[i][j].im !== undefined ) {
-                            output =  output + "'" + this.content[i][j].print() + "'" ;
-                        }
-                    }
-                }
-                output = output + " ],\n";
-            }  
-            output = output + "]"
-        } else if (type === "matlab") {
-            output = "[\n";
-            for (let i = 0; i < this.nR; i++) {
-                for (let j = 0; j < this.nC; j++) {
-                    if ( typeof(this.content[i][j]) === "number" ) {
-                        output =  output + " " + this.content[i][j].toString();
-                    } else if ( this.content[i][j].re !== undefined && this.content[i][j].im !== undefined ) {
-                        output =  output + " " + this.content[i][j].print();
-                    }
-                }
-                output = output + ";\n";
-            }   
-            output = output + "]"
-        }
-        return output;
-    }
-    
-    mArray() {
-        let output = [];
-        for (let i = 0; i < this.nR; i++) {
-            output.push([]);
-            for (let j = 0; j < this.nC; j++) {
-                output[i].push( this.content[i][j] )
-            }
-        }  
-        return output;
-    }
-
+       
     clone(i = 0, j = 0, sizeX = 1, sizeY = 1) {
         if (arguments.length === 4) {
             if (typeof(i) === "number" && typeof(j) === "number" && typeof(sizeX) === "number" && typeof(sizeY) === "number" ) {
@@ -1255,7 +1263,7 @@ class MatrixOperations {
             return output;
         }
     }
-    
+
     serialize() {
         let nR   = this.nR;
         let nC   = this.nC;
@@ -1267,7 +1275,56 @@ class MatrixOperations {
         });
         return output;
     }
-    
+
+    update(input, i = 0, j = 0, sizeX = 1, sizeY = 1) {
+        let output = this.clone();       
+        if (typeof(input) === "number" || (input.re !== undefined && input.im !== undefined) ) {
+            if ( i < output.nR && j < output.nC ) {
+                for (let l = i; l < i + sizeX; l++) {
+                    for (let k = j; k < j + sizeY; k++) {
+                        if ( l >= output.nR || l < 0 || k >= output.nC || k < 0 ) {
+                            continue;
+                        } else {
+                            output.data(l, k, input);
+                        }
+                    }
+                }
+            }
+        } else if (typeof(input) === "function") {
+            if ( i < output.nR && j < output.nC ) {
+                for (let l = i; l < i + sizeX; l++) {
+                    for (let k = j; k < j + sizeY; k++) {
+                        if ( l >= output.nR || l < 0 || k >= output.nC || k < 0 ) {
+                            continue;
+                        } else {
+                            output.data(l, k, input(l, k));
+                        }
+                    }
+                }
+            }
+        } else if (input.nR) {
+            let sizeX = input.nR;
+            let sizeY = input.nC;
+            input = new MatrixStruc(input.nR, input.nC, (k, l) => {
+                return input.content[k][l];
+            });
+            if ( i < output.nR && j < output.nC ) {
+                for (let l = i; l < i + sizeX; l++) {
+                    for (let k = j; k < j + sizeY; k++) {
+                        if ( l >= output.nR || l < 0 || k >= output.nC || k < 0 ) {
+                            continue;
+                        } else {
+                            output.data(l , k, input.data(l-i, k-j));
+                        }
+                    }
+                }
+            }
+        }
+
+        return output;
+        
+    }
+
     row(i) {
         if (typeof(i) === "number" && (i < this.nR && i >= 0)) {
             let row;
@@ -1289,7 +1346,7 @@ class MatrixOperations {
             return column;
         }
     }
-    
+
     removeRow(i) {
         if (typeof(i) === "number" && (i < this.nR && i >= 0)) {
             let output = new MatrixStruc(this.nR-1, this.nC);
@@ -1372,6 +1429,39 @@ class MatrixOperations {
         return output;
     }
     
+    times(m) {
+        m = new MatrixStruc(m.nR, m.nC, (k, l) => {
+            return m.content[k][l];
+        });
+        let mdotProduct = function (row, column) {
+            let a; let b;
+            let value = complex(0, 0);
+            let nC = row.nC;
+            let nR = column.nR;
+            if (nR === nC) {
+                for (let i = 0; i < nC; i++) {
+                    a = complex(row.data(0, i));
+                    b = complex(column.data(i, 0)).conjugate();
+                    value = a.times(b).plus(value)
+                }
+            }
+            return value;
+        }
+        if (this.nC === m.nR) {
+            let value;
+            let nR     = this.nR;
+            let nC     = m.nC;
+            let output = new MatrixStruc(nR, nC);
+            for (let i = 0; i < nR; i++) {
+                for (let j = 0; j < nC; j++) {
+                    value = mdotProduct( this.row(i), m.column(j));
+                    output.data(i, j, value);
+                }
+            }
+            return output;
+        }
+    }
+
     etimes(m) {
         if (m.nR) {
             m = new MatrixStruc(m.nR, m.nC, (k, l) => {
@@ -1509,6 +1599,34 @@ class MatrixOperations {
         }
     }
 
+    colSwapZeros() {
+        let notFound; let output; let count; let j; let swaps; let maxI;
+        output = this.clone();
+        count = 0;
+        swaps = 0;
+        maxI  = (output.nR > output.nC) ? output.nC : output.nR;
+        for (let i = 0; i < maxI; i++) {
+            if ( complex(output.data(i, i)).isNull() ) {
+                j = 0;
+                notFound = true;
+                count++; 
+                while (j < output.nC && notFound) {
+                    if ( !complex(output.data(i, j)).isNull() ) {
+                        output = output.swapCol(i, j);
+                        notFound = false;
+                        count--;
+                        swaps++;
+                    } else {
+                        j++;
+                    }
+                }   
+            } else {
+                continue;
+            }
+        }
+        return {output: output, zeros: count, swaps: swaps};
+    }
+
     swapRow(k, l) {
         let output = this.clone();
         if ( k !== l ) {
@@ -1531,6 +1649,34 @@ class MatrixOperations {
         } else {
             return output;
         }
+    }
+
+    rowSwapZeros() {
+        let notFound; let output; let count; let i; let swaps; let maxJ;
+        output = this.clone();
+        count  = 0;
+        swaps  = 0;
+        maxJ   = (output.nR > output.nC) ? output.nC : output.nR; 
+        for (let j = 0; j < maxJ; j++) {  
+            if (complex(output.data(j, j)).isNull()) {
+                i = 0;
+                notFound = true;
+                count++;
+                while (i < output.nR && notFound) {  
+                    if ( !complex(output.data(i, j)).isNull() ) {
+                        output = output.swapRow(i, j);
+                        notFound = false;
+                        count--;
+                        swaps++;
+                    } else {
+                        i++;
+                    }
+                }
+            } else {
+                continue;
+            }
+        }
+        return {output: output, zeros: count, swaps: swaps};
     }
 
     normalize(factor) {
@@ -1562,55 +1708,6 @@ class MatrixOperations {
         }
         return output;
     }
-
-    update(input, i = 0, j = 0, sizeX = 1, sizeY = 1) {
-        let output = this.clone();       
-        if (typeof(input) === "number" || (input.re !== undefined && input.im !== undefined) ) {
-            if ( i < output.nR && j < output.nC ) {
-                for (let l = i; l < i + sizeX; l++) {
-                    for (let k = j; k < j + sizeY; k++) {
-                        if ( l >= output.nR || l < 0 || k >= output.nC || k < 0 ) {
-                            continue;
-                        } else {
-                            output.data(l, k, input);
-                        }
-                    }
-                }
-            }
-        } else if (typeof(input) === "function") {
-            if ( i < output.nR && j < output.nC ) {
-                for (let l = i; l < i + sizeX; l++) {
-                    for (let k = j; k < j + sizeY; k++) {
-                        if ( l >= output.nR || l < 0 || k >= output.nC || k < 0 ) {
-                            continue;
-                        } else {
-                            output.data(l, k, input(l, k));
-                        }
-                    }
-                }
-            }
-        } else if (input.nR) {
-            let sizeX = input.nR;
-            let sizeY = input.nC;
-            input = new MatrixStruc(input.nR, input.nC, (k, l) => {
-                return input.content[k][l];
-            });
-            if ( i < output.nR && j < output.nC ) {
-                for (let l = i; l < i + sizeX; l++) {
-                    for (let k = j; k < j + sizeY; k++) {
-                        if ( l >= output.nR || l < 0 || k >= output.nC || k < 0 ) {
-                            continue;
-                        } else {
-                            output.data(l , k, input.data(l-i, k-j));
-                        }
-                    }
-                }
-            }
-        }
-
-        return output;
-        
-    }
     
     augmentBy(m) {
         if ( m.nR ) {
@@ -1626,21 +1723,149 @@ class MatrixOperations {
         }
     }
 
-    round(precis = 0) {
-        let value; let precision; let output;
-        if (precis >= 0) {
-            precision = Math.pow(10, Math.round(precis));
-        }
-        output = new MatrixStruc(this.nR, this.nC);
-        for (let i = 0; i < this.nR; i++) {
-            for (let j = 0; j < this.nC; j++) {
-                value = complex(this.data(i, j));
-                value.re = Math.round(value.re * precision) / precision;
-                value.im = Math.round(value.im * precision) / precision;
-                output.data(i, j, value);
+    reduce(type = "upper", precis = 10) { 
+        let precision = Math.pow(10, Math.round(precis));
+        if (type === "upper") {
+            let value; let a; let b; let pivot; let coef; let interObj;
+            let swapCount = 0;
+            let output    = this.clone();
+            for (let i = 0; i < output.nR-1; i++) {
+                if ( complex(output.data(i, i)).isNull() ) {  
+                    interObj  = output.colSwapZeros();
+                    swapCount = swapCount + interObj.swaps;
+                    if (interObj.zeros !== 0) {
+                        interObj  = interObj.output.rowSwapZeros();
+                        swapCount = swapCount + interObj.swaps;
+                        if (output.zeros === 0) {
+                            output = interObj.output;
+                        }
+                    }
+                }
+                pivot = complex(output.data(i, i));
+                for (let k = i+1; k < output.nR; k++) {
+                    coef = complex(output.data(k, i));
+                    for (let j = 0; j < output.nC; j++) {
+                        a     = complex(output.data(k, j));
+                        b     = complex(output.data(i, j));
+                        value = a.minus( coef.over(pivot).times(b) );
+                        value.re = Math.round(value.re * precision) / precision;
+                        value.im = Math.round(value.im * precision) / precision;
+                        output.data(k, j, value);
+                    }
+                }
             }
+            return {output, swapCount};
+        } else if (type === "lower") {
+            let value; let a; let b; let pivot; let coef; let interObj;
+            let swapCount = 0;
+            let output = this.clone()
+            for (let i = output.nR - 1; i > 0; i--) {            
+                if ( complex(output.data(i, i)).isNull() ) {  
+                    interObj  = output.colSwapZeros();
+                    swapCount = swapCount + interObj.swaps;
+                    if (interObj.zeros !== 0) {
+                        interObj  = interObj.output.rowSwapZeros();
+                        swapCount = swapCount + interObj.swaps;
+                        if (interObj.zeros === 0) {
+                            output = interObj.output;
+                        }
+                    }
+                }
+                pivot = complex(output.data(i, i));
+                for (let k = i-1; k >= 0; k--) {
+                    coef = complex(output.data(k, i));
+                    for (let j = 0; j < output.nC; j++) {
+                        a = complex(output.data(k, j));
+                        b = complex(output.data(i, j));
+                        value = a.minus( coef.over(pivot).times(b) )
+                        value.re = Math.round(value.re * precision) / precision;
+                        value.im = Math.round(value.im * precision) / precision;
+                        output.data(k, j, value);
+                    }
+                }
+            }
+            return {output, swapCount};
         }
-        return output;
+    }
+
+    determinant(technique = "GE") {
+        if (this.nR === this.nC) {
+            let det; let coef;
+            if (technique === "Laplace") {
+                if (this.nR > 2) {
+                    det = complex(0, 0);
+                    for (let i = 0; i < this.nR; i++) {
+                        if ( complex(this.data(0, i)).isNull() ) {
+                            continue;
+                        } else {
+                            coef = complex(Math.pow(-1, i));
+                            det  = det.plus( coef.times(complex(this.data(0, i))).times( this.removeColumn(i).removeRow(0).determinant() ));
+                        }
+                    }
+                    return det;
+                } else if (this.nR === 2) {
+                    det = complex(0, 0).plus( complex(this.data(0, 0)).times(complex(this.data(1, 1))) ).minus( complex(this.data(1, 0)).times(complex(this.data(0, 1))) );
+                    return det;
+                } else if (this.nR === 1) {
+                    let det = complex(this.data(0, 0));
+                    return det;
+                }
+            } else if (technique === "GE") {
+                let det; let Oaug; let output; let swaps; let rem; let sign;
+                det    = complex(1, 0);
+                Oaug   = this.reduce();
+                output = Oaug.output;
+                swaps  = Oaug.swapCount;
+                rem    = swaps%2;          
+                if (rem === 0) {
+                    sign = 1;
+                } else {
+                    sign = -1;
+                }
+
+                for (let i = 0; i < this.nR; i++) {
+                    det = det.times(complex(output.data(i, i)))
+                }
+                
+                det = complex(det);
+
+                if ( isNaN(det) || (!det.im) ) {
+                    det    = complex(1, 0);
+                    Oaug   = this.reduce("lower");
+                    output = Oaug.output;
+                    swaps  = Oaug.swapCount;
+                    rem    = swaps%2;   
+                    if (rem === 0) {
+                        sign = 1;
+                    } else {
+                        sign = -1;
+                    }
+                    
+                    for (let i = 0; i < this.nR; i++) {
+                        det = det.times( complex(output.data(i, i)) )
+                    }
+                }
+                det = det.times(complex(sign));
+                return det;
+            }
+        } else {
+            console.log("This is not a square matrix");
+        }
+    }
+
+    invert() {
+        if (this.nR === this.nC) {
+            let I; let aug; let Oaug; let output; let solution;
+            I        = identity(this.nR);
+            aug      = this.augmentBy(I);
+            aug      = aug.reduce("upper").output;
+            aug      = aug.reduce("lower").output;
+            output   = aug.normalize();
+            solution = output.clone(0, this.nC, this.nR, this.nR);
+            return solution;
+        } else {
+            console.log("input matrix must be a square matrix");
+        }
     }
 
     sum() {
@@ -1677,6 +1902,18 @@ class MatrixOperations {
             output.data(i, 0, sum);
         }
         return output;
+    }
+
+    solve(y) {
+        if (this.nR === y.nR) {
+            let aug; let output; let solution;
+            aug      = this.augmentBy(y); 
+            aug      = aug.reduce("upper").output;
+            aug      = aug.reduce("lower").output; 
+            output   = aug.normalize();
+            solution = output.clone(0, this.nC , y.nR, y.nC )
+            return solution;
+        }
     }
 
     amplitude(precis = 10) {
@@ -1735,92 +1972,431 @@ class MatrixOperations {
         return output;
     }
 
-    stroke(points, brush) {
-        let i, j, ib, jb, color;
-        if ( Array.isArray(points) ) {
-            for (let k = 0; k < points.length; k++) {
-                i     = points[k][0];
-                j     = points[k][1];
-                color = points[k][2];
-                if (color === undefined) { color = 255 };
-                for (let l = 0; l < brush.collection.length; l++) {
-                    ib = i + brush.collection[l][0];
-                    jb = j + brush.collection[l][1];
-                    if ( ib >= 0 && ib < this.nR &&  jb >= 0 && jb < this.nC ) {
-                        this.data(ib, jb, color);
-                    }
-                }
+    round(precis = 0) {
+        let value; let precision; let output;
+        if (precis >= 0) {
+            precision = Math.pow(10, Math.round(precis));
+        }
+        output = new MatrixStruc(this.nR, this.nC);
+        for (let i = 0; i < this.nR; i++) {
+            for (let j = 0; j < this.nC; j++) {
+                value = complex(this.data(i, j));
+                value.re = Math.round(value.re * precision) / precision;
+                value.im = Math.round(value.im * precision) / precision;
+                output.data(i, j, value);
             }
         }
-        return this;
+        return output;
     }
-}
 
-class ComplexNumber extends ComplexOperations {
-    constructor(re, im) {
-        super();
-        if (arguments.length == 0) {
-            this.re = 0;
-            this.im = 0;
-        } else if (arguments.length === 1) {
-            this.re = re;
-            this.im = 0;
-        } else if (arguments.length === 2) {
-            this.re = re;
-            this.im = im;
+    minmax(data = "real") {
+        let min; let max; let intermediate;   
+        if (data === "amplitude") {
+            intermediate = this.amplitude();
+        } else if (data === "phase") {
+            intermediate = this.phase();
+        } else if (data === "real") {
+            intermediate = this.real();
+        } else if (data === "imaginary") {
+            intermediate = this.imaginary();
         }
-        Object.seal(this);
-    }
-}
 
-class MatrixStruc extends MatrixOperations {
-    constructor(nR, nC, v = 0) {
-        super();
-        this.nR      = nR;
-        this.nC      = nC;
-        this.content = {};   
-        if(arguments.length >= 2) {
-            if (typeof(nR) === "number" && typeof(nC) === "number") {
-                if (typeof(v) === "number") {
-                    for (let i = 0; i < nR; i++) {
-                        this.content[i] = {};
-                        for (let j = 0; j < nC; j++) {
-                            this.content[i][j] = v;
+        min = intermediate.data(0, 0);
+        max = intermediate.data(0, 0)
+        
+        for (let i = 0; i < intermediate.nR; i++) {
+            for (let j = 0; j < intermediate.nC; j++) {
+                min = (min <= intermediate.data(i, j)) ? min : intermediate.data(i,j);
+                max = (max >= intermediate.data(i, j)) ? max : intermediate.data(i, j);
+            }
+        }
+        return {min, max};
+    }
+
+    hist( data = "real" ) {
+        let intermediate, voutput, coutput, output, exist;
+            voutput = []; coutput = [];
+        if (data === "amplitude") {
+            intermediate = this.amplitude();
+        } else if (data === "phase") {
+            intermediate = this.phase();
+        } else if (data === "real") {
+            intermediate = this.real();
+        } else if (data === "imaginary") {
+            intermediate = this.imaginary();
+        }
+
+        for (let i = 0; i < intermediate.nR; i++) {
+            for (let j = 0; j < intermediate.nC; j++) {
+                if (voutput.length > 0) {
+                    exist = false;
+                    for ( let k = 0; k < voutput.length; k++ ) {
+                        if ( intermediate.data(i, j) === voutput[k] ) {
+                            coutput[k] = coutput[k] + 1;
+                            exist      = true;
+                            break
                         }
-                        Object.seal(this.content[i]);
                     }
-                } else if ( (v.re !== undefined && v.im !== undefined) ) {
-                    v = new ComplexNumber(v.re, v.im);
-                    if (v.isReal()) {
-                        for (let i = 0; i < nR; i++) {
-                            this.content[i] = {};
-                            for (let j = 0; j < nC; j++) {
-                                this.content[i][j] = v.re;
-                            }
-                            Object.seal(this.content[i]);
-                        }
-                    } else {
-                        for (let i = 0; i < nR; i++) {
-                            this.content[i] = {};
-                            for (let j = 0; j < nC; j++) {
-                                this.content[i][j] = v;
-                            }
-                            Object.seal(this.content[i]);
-                        }
+                    if (!exist) {
+                        voutput.push(intermediate.data(i, j));
+                        coutput.push(1);
                     }
-                } else if (typeof(v) === "function") {
-                    for (let i = 0; i < nR; i++) {
-                        this.content[i] = {};
-                        for (let j = 0; j < nC; j++) {
-                            this.content[i][j] = v(i,j);
-                        }
-                        Object.seal(this.content[i]);
-                    }
+                } else {
+                    voutput.push(intermediate.data(i, j));
+                    coutput.push(1);
                 }
             }
         }
         
-        Object.seal(this.content);
+        output = matrix([
+            voutput, 
+            coutput
+        ]);
+
+        output = output.sortBy(0, "row");
+        return output;
+
+    }
+
+    PMF( data = "real" ) {
+        let hist  = this.hist(data);
+        let count = 0; 
+        
+        for (let j = 0; j < hist.nC; j++) {
+            count = hist.content[1][j] + count;
+        }
+
+        let PMF = new MatrixStruc(hist.nR, hist.nC, (i, j) => {
+            if (i === 0) {
+                return hist.content[0][j];
+            } else if ( i === 1) {
+                return hist.content[1][j]/count;
+            }
+        })
+
+        return PMF;
+    }
+
+    unique(data = "real") {
+        let output = this.hist(data).row(0) ;
+        return output;
+    }
+
+    CDF( data = "real", precis = 5 ) {
+        let total, histo, value, output, precision;
+        precision = Math.pow(10, Math.round(precis));
+        histo  = this.hist(data);
+        total  = histo.row(1).sumRows().data(0, 0);
+        output = histo.clone();
+        value  = 0;
+        for (let q = 0; q < histo.nC; q++) {
+            value  = value +  ( histo.data(1, q)/total );
+            value  = Math.round(value * precision) / precision;
+            output.data(1, q, value);
+        }
+        return output;
+    }
+
+    median() {
+        let intermediate, index, uppermedian, lowermedian;
+        intermediate = this.serialize();
+        intermediate = intermediate.sortBy(0, "row");
+        index        = (intermediate.nC-1) / 2;
+        uppermedian  = intermediate.data(0, Math.ceil(index));
+        lowermedian  = intermediate.data(0, Math.floor(index));
+        return ( (uppermedian+lowermedian)/2 )
+    }
+
+    sortBy( n = 0, mode = "row" ) {
+        let nstages, step, output, result, start, mid, end, L, R, iL, j, k, Lsize, Rsize, index;
+
+        if ( mode === "row" ) {
+            if ( typeof(n) === "number" && n < this.nR ) {
+                output  = new MatrixStruc(2, this.nC, 0);
+                
+                for ( let q = 0; q < this.nC ; q++ ) {
+                    output.data( 0 , q , q );
+                    output.data( 1 , q , this.data( n , q ) );
+                }
+
+                nstages = Math.ceil( Math.log2( output.nC ) );
+                
+                for ( let i = 0; i < nstages; i++) {
+                    step = Math.pow( 2 , (i+1) );
+                    for ( let m = 0; m < output.nC; m = m + step ) {
+                        L     = null; 
+                        R     = null;
+                        start = m;
+                        mid   = (  m + (step/2) );
+                        end   = ( (mid+(step/2) ) < output.nC ) ? ( mid + step / 2 ) : output.nC;
+                        Lsize = step / 2;
+                        Rsize = end - mid;
+                        L     = matrix(0, 2, Lsize);
+
+                        for ( let j = m ; j < mid; j++ ) {
+                            for ( let o = 0 ; o < output.nR; o++ ) {
+                                if ( (j) < output.nC ) {
+                                    L.data( o, j-m, output.data( o , j ));
+                                }
+                            }
+                        }
+
+                        if (Rsize > 0) {
+                            R = matrix( 0 , 2, Rsize )
+                            for ( let j = mid; j < end; j++) {
+                                for (let o = 0; o < output.nR; o++) {
+                                    if ( j < output.nC ) {
+                                        R.data(o, j-mid, output.data(o, j) );
+                                    }
+                                }
+                            }
+                        } else {
+                            continue;
+                        }
+                        
+                        iL = j = k = 0;
+                        while ( iL < L.nC && j < R.nC ) {     
+                            if ( L.data(1, iL) < R.data(1, j) ) {
+                                for ( let o = 0 ; o < output.nR ; o++ ) {
+                                    if ( (m+k) < output.nC ) {
+                                        output.data(o, (m+k), L.data(o, iL));
+                                    }
+                                }
+                                iL++;
+                            } else {
+                                for ( let o = 0 ; o < output.nR ; o++ ) {
+                                    if ( (m+k) < output.nC ) {
+                                        output.data(o, (m+k), R.data(o, j));
+                                    }
+                                }
+                                j++;
+                            }
+                            k++;
+                        }
+                        
+                        while ( iL < L.nC ) {
+                            for (let o = 0; o < output.nR; o++) {
+                                if ( (m+k) < output.nC ) {
+                                    output.data(o, m+k, L.data(o, iL));
+                                }
+                            }
+                            iL++;
+                            k++;
+                        }
+                        
+                        while ( j < R.nC ) {
+                            for (let o = 0; o < output.nR; o++) {
+                                if ( (m+k) < output.nC ) {
+                                    output.data(o, m+k, R.data(o, j));
+                                }
+                            }
+                            j++;
+                            k++;
+                        }
+                    
+                    }
+                }
+    
+                
+                result     = new MatrixStruc(this.nR, this.nC);
+                for (let q = 0; q < this.nC; q++) {
+                    index  = output.data(0, q);
+                    result = result.replaceColumn( q,  this.column(index) );
+                }
+                
+                return result;
+            }
+        }
+        if (mode === "col") {
+            if ( typeof(n) === "number" && n < this.nR ) {
+                output  = this.transpose();
+                result  = output.sortBy(n, "row").transpose();
+                return result;
+            }
+        }
+    }
+    
+    printToDOM(querySelector, css) {
+        let canvas, ctx, imageData, index, parent;
+        canvas              = document.createElement("canvas");
+        canvas.style.width  = this.nC;
+        canvas.style.height = this.nR;
+        canvas.width        = this.nC;
+        canvas.height       = this.nR;
+        ctx                 = canvas.getContext('2d');
+        imageData           = new ImageData(this.nC, this.nR);
+
+        if ( css !== undefined ) {
+            if ( typeof(css.id) === "string" ) {
+                canvas.id = css.id;
+            }
+            if ( typeof(css.class) === "string" ) {
+                canvas.classList.push(css.class);
+            }
+        }
+
+        if (querySelector instanceof Element) {
+            parent = querySelector;
+        } else if ( typeof(querySelector) === "string" ) {
+            parent = document.querySelector(querySelector);
+        } else if ( querySelector === undefined ) {
+            parent = document.body;
+        }
+
+        for (let i = 0; i < this.nR; i++) {
+            for (let j = 0; j < this.nC; j++) {                        
+                index = (i * this.nC + j) * 4;
+                for (let l = 0; l < 4; l++) {
+                    if (l === 3) {
+                        imageData.data[index+l] = 255;
+                    } else {
+                        imageData.data[index+l] = this.content[i][j];
+                    }
+                }    
+            }
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+        parent.appendChild(canvas);
+
+        return this;
+    } 
+
+    updateCanvas(querySelector) {
+        let canvas, ctx, imageData, index;
+        if (querySelector instanceof Element) {
+            canvas = querySelector;
+        } else if ( typeof(querySelector) === "string" ) {
+            canvas = document.querySelector(querySelector);
+        }
+
+        canvas.style.width  = this.nC;
+        canvas.style.height = this.nR;
+        canvas.width        = this.nC;
+        canvas.height       = this.nR;
+        
+        ctx                 = canvas.getContext('2d');
+        imageData           = new ImageData( this.nC, this.nR );
+        for (let i = 0; i < this.nR; i++) {
+            for (let j = 0; j < this.nC; j++) {                        
+                index = (i * this.nC + j) * 4;
+                for (let l = 0; l < 4; l++) {
+                    if (l === 3) {
+                        imageData.data[index+l] = 255;
+                    } else {
+                        imageData.data[index+l] = this.content[i][j];
+                    }
+                }    
+            }
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+        return this;
+    }
+
+    evalp(x, output = "array", input = "real") {
+        let nR, nC, result, a, b, c, k;
+        if (input === "complex") {
+            nR     = this.nR;
+            nC     = this.nC;
+            result = new MatrixStruc(nR, 1);
+            for (let i = 0; i < this.nR; i++) {
+                k = nC-1;
+                b = complex(x);
+                a = complex(this.content[i][k]);
+                for (let j = 0; j < this.nC-1; j++) {
+                    c = complex(this.content[i][k-1]);
+                    a = a.times(b).plus(c);
+                    k--;
+                }
+                if (a.isReal()) {
+                    result.content[i][0] = a.re;
+                } else {
+                    result.content[i][0] = a;
+                }
+            }
+        } else if ( input === "real" ) {
+            nR     = this.nR;
+            nC     = this.nC;
+            result = new MatrixStruc(nR, 1);
+            for (let i = 0; i < this.nR; i++) {
+                k = nC-1;
+                b = x;
+                a = this.content[i][k];
+                for (let j = 0; j < this.nC-1; j++) {
+                    c = this.content[i][k-1];
+                    a = a * b + c;
+                    k--;
+                }
+                result.content[i][0] = a;
+            }
+        }
+        if (output === "matrix") {
+            return result;
+        } else if ( output === "array" ) {
+            return result.transpose().mArray();
+        }
+    }
+
+    evalp2(x, y, output = "array", input = "real") {
+        let nR, nC, result, a, b, c, k;
+        if (input === "complex") {
+            nR     = this.nR;
+            nC     = this.nC;
+            result = new MatrixStruc(nR, 1);
+            for (let i = 0; i < this.nR; i++) {
+                k = nC-1;
+                b = complex(x);
+                a = complex(this.content[i][k]);
+                for (let j = 0; j < this.nC-1; j++) {
+                    c = complex(this.content[i][k-1]).times( complex(y).pow(j+1) );
+                    a = a.times(b).plus(c);
+                    k--;
+                }
+                if (a.isReal()) {
+                    result.content[i][0] = a.re;
+                } else {
+                    result.content[i][0] = a;
+                }
+            }
+        } else if ( input === "real" ) {
+            nR     = this.nR;
+            nC     = this.nC;
+            result = new MatrixStruc(nR, 1);
+            for (let i = 0; i < this.nR; i++) {
+                k = nC-1;
+                b = x;
+                a = this.content[i][k];
+                for (let j = 0; j < this.nC-1; j++) {
+                    c = this.content[i][k-1] * Math.pow(y, j+1);
+                    a = c + a * b;
+                    k--;
+                }
+                result.content[i][0] = a;
+            }
+        }
+
+        if (output === "matrix") {
+            return result;
+        } else if ( output === "array" ) {
+            return result.transpose().mArray();
+        }
+    }
+
+    evalpM(matrix, output = "array", input = "real", k = 0) {
+        let result = new MatrixStruc(matrix.nR, matrix.nC);
+        if ( matrix.nR !== undefined ) {
+            for (let i = 0; i < matrix.nR; i++) {
+                for (let j = 0; j < matrix.nC; j++) {
+                    result.content[i][j] = this.evalp(matrix.content[i][j], "array", input)[k]
+                }
+            }
+        }
+        if (output === "matrix") {
+            return result;
+        } else if ( output === "array" ) {
+            return result.transpose().mArray();
+        }
     }
 }
 
@@ -1844,6 +2420,18 @@ class VectorOperations {
         let output;
         output = new MatrixStruc(this.dim, 1, (i, j) => { return this[i] });
         return output;
+    }
+
+    transformBy(T) {
+        if (T.nR !== undefined) {
+            let p, pT, nP;
+            p = this.toMatrix();
+            if (T.nC === p.nR) {
+                pT = T.times(p);
+                nP = new Vector(...pT.transpose().mArray())
+                return nP;
+            }
+        }
     }
 
     print() {
@@ -1905,12 +2493,12 @@ class VectorOperations {
         return output;
     }
 
-    round() {
-        let output;
+    round(precis) {
+        let precision = Math.pow(10, Math.round(precis));
         for (let i = 0; i < this.dim; i++) {
-            this[i] = Math.round(this[i]);
+            this[i] = Math.round(this[i] * precision) / precision;
         }
-        return output;
+        return this;
     }
 
     angle(vector, unit = "rad" ) {
@@ -1949,6 +2537,26 @@ class PointOperations {
         return output;
     }
 
+    transformBy(T, augMatrix) {
+        if (T.nR !== undefined) {
+            let p, pT, nP, aug;
+
+            if (augMatrix === undefined) {
+                aug = new MatrixStruc(1, 1, 1);
+                p = this.toMatrix().transpose().augmentBy(aug).transpose();
+            } else {
+                aug = augMatrix; 
+                p = this.toMatrix().transpose().augmentBy(aug).transpose();
+            }
+
+            if (T.nC === p.nR) {
+                pT = T.times(p).removeRow( p.nR-1 );
+                nP = new Point(...pT.transpose().mArray())
+                return nP;
+            }
+        }
+    }
+
     print() {
         return this.toMatrix().print();
     }
@@ -1984,11 +2592,11 @@ class PointOperations {
     }
 
     times(scalar) {
-        let output;
+        let output, array;
         output = this.toMatrix().etimes( scalar );   
         array  = [];
-        for (let i = 0; i < column.nR; i++) {
-            array.push(column.content[i][0]);
+        for (let i = 0; i < output.nR; i++) {
+            array.push(output.content[i][0]);
         } 
         output = new Point(...array);
         return output;
@@ -2006,43 +2614,16 @@ class PointOperations {
         return sum;
     }
 
-    round() {
-        let output;
+    round(precis) {
+        let precision = Math.pow(10, Math.round(precis));
         for (let i = 0; i < this.dim; i++) {
-            this[i] = Math.round(this[i]);
+            this[i] = Math.round(this[i] * precision) / precision;
         }
-        return output;
+        return this;
     }
 }
 
-class Point extends PointOperations {
-    constructor() {
-        super();
-        for (let i = 0; i < arguments.length; i++) {
-            this[i] = arguments[i];
-        }
-        this.dim = arguments.length;
-        this.type = "Point";
-    }
-}
-
-class Vector extends VectorOperations {
-    constructor() {
-        super();
-        for (let i = 0; i < arguments.length; i++) {
-            this[i] = arguments[i];
-        }
-        this.dim = arguments.length;
-        this.type = "Vector";
-    }
-}
-
-class RealSet {
-    constructor() {
-        this.collection = [];
-        this.type       = "RealSet"
-    }
-
+class RealSetOperations {
     has(element) {
         return (this.collection.indexOf(element) !== -1);
     }
@@ -2055,7 +2636,7 @@ class RealSet {
         if ( typeof(element) === "number" ) {
             if ( !this.has(element) ) {
                 this.collection.push(element);
-                return true;
+                return this;
             }
             return false;
         }
@@ -2114,14 +2695,10 @@ class RealSet {
             return otherSet.has(value);
         })
     }
+
 }
 
-class ComplexSet {
-    constructor() {
-        this.collection = [];
-        this.type       = "ComplexSet"
-    }
-
+class ComplexSetOperations {
     has(element) {
         let hasE = false;
         for (let i = 0; i < this.size(); i++) {
@@ -2141,7 +2718,7 @@ class ComplexSet {
         if ( element.im !== undefined ) {
             if ( !this.has(element) ) {
                 this.collection.push(element);
-                return true;
+                return this;
             }
             return false;
         }
@@ -2170,8 +2747,7 @@ class ComplexSet {
             unionSet.add(e);
         })
         return unionSet;
-    };
-
+    }
 
     intersection(otherSet) {
         let intersectionSet = new ComplexSet();
@@ -2203,115 +2779,20 @@ class ComplexSet {
     }
 }
 
-class VectorSet {
-    constructor() {
-        this.collection = [];
-        this.type       = "VectorSet"
-    }
-
-    has(element) {
-        let hasE = false;
+class PointSetOperations {
+    times(scalar) {
         for (let i = 0; i < this.size(); i++) {
-            if ( this.collection[i].equals(element) ) {
-                hasE = true;
-                break;
-            }
+            this.collection[i] = this.collection[i].times(scalar);
         }
-        return hasE;
+
+        return this;
     }
 
-    values() {
-        return this.collection;
-    }
-
-    add(element) {
-        if ( element.type === "Vector" ) {
-            if ( !this.has(element) ) {
-                this.collection.push(element);
-                return true;
-            }
-            return false;
-        }
-    }
-
-    remove(element) {
-        if (this.has(element)) {
-            let index;
-            for (let i = 0; i < this.size(); i++) {
-                if ( this.collection[i].equals(element) ) {
-                    index = i;
-                    break;
-                }
-            }
-            this.collection.splice(index, 1);
-            return true;
-        }
-    }
-
-    size() {
-        return this.collection.length;
-    }
-
-    union(otherSet) {
-        let unionSet  = new VectorSet();
-        let firstSet  = this.values();
-        let secondSet = otherSet.values();
-        firstSet.forEach( (e)  => {
-            unionSet.add(e);
-        });
-        secondSet.forEach( (e) => {
-            unionSet.add(e);
+    subDim(k) {
+        let output = new MatrixStruc(1, this.size(), (i, j) => {
+            return this.collection[j][k];
         })
-        return unionSet;
-    }
-
-    intersection(otherSet) {
-        let intersectionSet = new VectorSet();
-        let firstSet        = this.values();
-        firstSet.forEach( (e) => {
-            if (otherSet.has(e)) {
-                intersectionSet.add(e);
-            }
-        })
-        return intersectionSet;
-    }
-
-    difference(otherSet) {
-        let differenceSet = new VectorSet();
-        let firstSet      = this.values();
-        firstSet.forEach( (e) => {
-            if ( !otherSet.has(e) ) {
-                differenceSet.add(e);
-            }
-        })
-        return differenceSet;
-    }
-
-    subSet(otherSet) {
-        let firstSet = this.values();
-        return firstSet.every( (value) => {
-            return otherSet.has(value);
-        })
-    }
-
-    toMatrix() {
-        let nC = this.size();
-        let nR = this.collection[0].dim;
-        let output = new MatrixStruc(nR, nC);
-        
-        for (let j = 0; j < nC; j++) {
-            output = output.replaceColumn(j, this.collection[j].toMatrix());
-        }
-        
-        return output
-
-    }
-}
-
-class PointSet {
-    constructor() {
-        this.collection = [];
-        this.type       = "PointSet"
+        return output;
     }
 
     has(element) {
@@ -2331,10 +2812,13 @@ class PointSet {
 
     add(element) {
         if ( element.type === "Point" ) {
-            this.collection.push(element);
-            if ( !this.has(element) ) {
+            if ( this.collection.length === 0) {
+                this.dim = element.dim;
                 this.collection.push(element);
-                return true;
+                return this;
+            } else if ( this.dim === element.dim && !this.has(element) ) {
+                this.collection.push(element);
+                return this;
             }
             return false;
         }
@@ -2412,4 +2896,406 @@ class PointSet {
         return output
 
     }
+
+    round() {
+        for (let i = 0; this.collection.length; i++) {
+            this.collection[i].round();
+        }
+        return this;
+    }
+
+    transformBy(T) {
+        for (let i = 0; i < this.size(); i++) {
+            this.collection[i] = this.collection[i].transformBy(T);
+        }
+        return this;
+    }
+
+    centroid () {
+        let center = [];
+        for (let k = 0; k < this.dim; k++) {
+            center.push(this.subDim(k).sum().re/this.size());
+        }
+        return center;
+    }
+
+    distanceFrom(point) {
+        let distance = [];
+        for (let i = 0; i < this.size(); i++) {
+            distance.push( this.collection[i].distanceFrom(point) );
+        }
+        return distance;
+    }
 }
+
+class VectorSetOperations {
+    times(scalar) {
+        for (let i = 0; i < this.size(); i++) {
+            this.collection[i] = this.collection[i].times(scalar);
+        }
+    }
+
+    subDim(k) {
+        let output = new MatrixStruc(1, this.size(), (i, j) => {
+            return this.collection[j][k];
+        })
+        return output;
+    }
+
+    has(element) {
+        let hasE = false;
+        for (let i = 0; i < this.size(); i++) {
+            if ( this.collection[i].equals(element) ) {
+                hasE = true;
+                break;
+            }
+        }
+        return hasE;
+    }
+
+    values() {
+        return this.collection;
+    }
+
+    add(element) {
+        if ( element.type === "Vector" ) {
+            if ( this.collection.length === 0) {
+                this.dim = element.dim;
+                this.collection.push(element);
+                return this
+            } else if ( this.dim === element.dim && !this.has(element) ) {
+                this.collection.push(element);
+                return this;
+            }
+            return false;
+        }
+    }
+
+    remove(element) {
+        if (this.has(element)) {
+            let index;
+            for (let i = 0; i < this.size(); i++) {
+                if ( this.collection[i].equals(element) ) {
+                    index = i;
+                    break;
+                }
+            }
+            this.collection.splice(index, 1);
+            return true;
+        }
+    }
+
+    size() {
+        return this.collection.length;
+    }
+
+    union(otherSet) {
+        let unionSet  = new VectorSet();
+        let firstSet  = this.values();
+        let secondSet = otherSet.values();
+        firstSet.forEach( (e)  => {
+            unionSet.add(e);
+        });
+        secondSet.forEach( (e) => {
+            unionSet.add(e);
+        })
+        return unionSet;
+    }
+
+    intersection(otherSet) {
+        let intersectionSet = new VectorSet();
+        let firstSet        = this.values();
+        firstSet.forEach( (e) => {
+            if (otherSet.has(e)) {
+                intersectionSet.add(e);
+            }
+        })
+        return intersectionSet;
+    }
+
+    difference(otherSet) {
+        let differenceSet = new VectorSet();
+        let firstSet      = this.values();
+        firstSet.forEach( (e) => {
+            if ( !otherSet.has(e) ) {
+                differenceSet.add(e);
+            }
+        })
+        return differenceSet;
+    }
+
+    subSet(otherSet) {
+        let firstSet = this.values();
+        return firstSet.every( (value) => {
+            return otherSet.has(value);
+        })
+    }
+
+    toMatrix() {
+        let nC = this.size();
+        let nR = this.collection[0].dim;
+        let output = new MatrixStruc(nR, nC);
+        
+        for (let j = 0; j < nC; j++) {
+            output = output.replaceColumn(j, this.collection[j].toMatrix());
+        }
+        
+        return output
+    }
+
+    round() {
+        for (let i = 0; this.collection.length; i++) {
+            this.collection[i].round();
+        }
+
+        return this;
+    }
+
+    transformBy(T) {
+        for (let i = 0; i < this.size(); i++) {
+            this.collection[i].transformBy(T);
+        }
+    }
+}
+
+// Classes:
+
+class ComplexNumber extends ComplexOperations {
+    constructor(re, im) {
+        super();
+        if (arguments.length == 0) {
+            this.re = 0;
+            this.im = 0;
+        } else if (arguments.length === 1) {
+            this.re = re;
+            this.im = 0;
+        } else if (arguments.length === 2) {
+            this.re = re;
+            this.im = im;
+        }
+        Object.seal(this);
+    }
+}
+
+class MatrixStruc extends MatrixOperations {
+    constructor(nR, nC, v = 0) {
+        super();
+        this.nR      = nR;
+        this.nC      = nC;
+        this.content = {};   
+        if(arguments.length >= 2) {
+            if (typeof(nR) === "number" && typeof(nC) === "number") {
+                if (typeof(v) === "number") {
+                    for (let i = 0; i < nR; i++) {
+                        this.content[i] = {};
+                        for (let j = 0; j < nC; j++) {
+                            this.content[i][j] = v;
+                        }
+                        Object.seal(this.content[i]);
+                    }
+                } else if ( (v.re !== undefined && v.im !== undefined) ) {
+                    v = new ComplexNumber(v.re, v.im);
+                    if (v.isReal()) {
+                        for (let i = 0; i < nR; i++) {
+                            this.content[i] = {};
+                            for (let j = 0; j < nC; j++) {
+                                this.content[i][j] = v.re;
+                            }
+                            Object.seal(this.content[i]);
+                        }
+                    } else {
+                        for (let i = 0; i < nR; i++) {
+                            this.content[i] = {};
+                            for (let j = 0; j < nC; j++) {
+                                this.content[i][j] = v;
+                            }
+                            Object.seal(this.content[i]);
+                        }
+                    }
+                } else if (typeof(v) === "function") {
+                    for (let i = 0; i < nR; i++) {
+                        this.content[i] = {};
+                        for (let j = 0; j < nC; j++) {
+                            this.content[i][j] = v(i,j);
+                        }
+                        Object.seal(this.content[i]);
+                    }
+                }
+            }
+        }
+        
+        Object.seal(this.content);
+    }
+}
+
+class Point extends PointOperations {
+    constructor() {
+        super();
+        for (let i = 0; i < arguments.length; i++) {
+            this[i] = arguments[i];
+        }
+        this.dim = arguments.length;
+        this.type = "Point";
+    }
+}
+
+class Vector extends VectorOperations {
+    constructor() {
+        super();
+        for (let i = 0; i < arguments.length; i++) {
+            this[i] = arguments[i];
+        }
+        this.dim = arguments.length;
+        this.type = "Vector";
+    }
+}
+
+class RealSet extends RealSetOperations {
+    constructor() {
+        super();
+        this.collection = [];
+        this.type       = "RealSet"
+    }
+}
+
+class ComplexSet extends ComplexSetOperations {
+    constructor() {
+        super();
+        this.collection = [];
+        this.type       = "ComplexSet"
+    }
+}
+
+class VectorSet extends VectorSetOperations {
+    constructor() {
+        super();
+        this.collection = [];
+        this.type       = "VectorSet";
+        this.dim        = 0;
+    }
+}
+
+class PointSet extends PointSetOperations{
+    constructor() {
+        super();
+        this.collection = [];
+        this.type       = "PointSet";
+        this.dim        = 0;
+    }
+}
+
+// Utility Functions: 
+
+function radToDeg(rads) {
+    if (rads.constructor.name === "MatrixStruc") {
+        let output = new MatrixStruc(rads.nR, rads.nC);
+        for (let i = 0; i < rads.nR; i++) {
+            for (let j = 0; j < rads.nC; j++) {
+                output.data( i, j, (rads.data(i, j) * (Math.PI / 180)) );
+            }
+        }
+        return output;
+    } else if (typeof(rads) === "number") {
+        let output = rads / (Math.PI / 180);
+        return output;
+    }
+}
+
+function complex(re, im) {
+    let output;
+    if (arguments.length === 0) {
+        output = new ComplexNumber(0, 0);
+    } else if (arguments.length === 1) {
+        if (typeof(re) === "number") {
+            output = new ComplexNumber(re, 0);
+        } else if ( (re.re !== undefined) && (re.im !== undefined)) {
+            output = new ComplexNumber(re.re, re.im);
+            return output;
+        }
+    } else if (arguments.length === 2) {
+        if  ( (re !== undefined && typeof(re) === "number" ) || (im !== undefined  && typeof(im) === "number" ) ) {
+            output = new ComplexNumber(re, im);
+            return output;
+        }
+    }
+    return output;
+}
+
+function isArrayOfNumbers(data) {
+    if (Array.isArray(data)) {
+        let isIt = true;
+        for (let i = 0; i < data.length; i++) {
+            if (typeof(data[i]) !== "number" && (data[i].re !== undefined && data[i].im !== undefined)) {
+                isIt = false;
+                break;
+            }
+        }
+        return isIt;
+    } else {
+        let isIt = false;
+        return isIt;
+    }
+}
+
+function isArrayOfArrays(data) {
+    if(Array.isArray(data)) {
+        let isIt = true;
+        for (let i = 0; i < data.length; i++) {
+            if ( Array.isArray(data[i]) ) {
+                continue;
+            } else {
+                isIt = false;
+                break;
+            }
+        }
+        return isIt;
+    }
+}
+
+function isMatrixArray(data) {
+    if (isArrayOfArrays(data)) {
+        let isIt = true;
+        let L = data[0].length;
+        for (let i = 0; i < data.length; i++) {
+            if (!isArrayOfNumbers(data[i])) {
+                isIt = false;
+                break;
+            } else {
+                if (L !== data[i].length) {
+                    isIt = false;
+                    break;
+                }
+            }
+        }
+        return isIt;
+    } else {
+        let isIt = false;
+        return isIt;
+    }    
+}
+
+function matrix(data, nR = 3, nC = 3) {
+    if (isMatrixArray(data)) {    
+        let nR = data.length;
+        let nC = data[0].length;
+        let m  = new MatrixStruc(nR, nC, (i, j) => {
+            return data[i][j]
+        });
+        return m;
+    } else if (isArrayOfNumbers(data)) {  
+        let m  = new MatrixStruc(1, data.length, (i,j) => {
+            return data[j];
+        });
+        return m;       
+    } else if (typeof(data) === "number" || typeof(data) === "function" || data.constructor.name === "ComplexNumber") {
+        let m  = new MatrixStruc(nR, nC, data);
+        return m;
+    } else { 
+        let m  = new MatrixStruc(3, 3, 0);
+        return m;
+    }
+}
+
+// Exports: 
+
+export default MatrixEngine;
