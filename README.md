@@ -730,6 +730,7 @@ MatrixEngine provies a number of usefull lightweight methods that runs on the ma
     
     this methods returns a row matrix containing the pascals coefficients for a polynomial of order n.
 
+
 22. 
 ## Set Methods (applies to: realSet, complexSet, pointSet, vectorSet): 
 
@@ -793,6 +794,13 @@ MatrixEngine provies a number of usefull lightweight methods that runs on the ma
     - magnitude()
     - round()
     - angle(Vector, unit = "rad" )
+
+## GPU Methods: 
+
+1. readImageGPU(imageLink, components): the link image to read, the compoents to read (e.g: "rgb", "rrr", "rrg", "r" = "rrr")
+2. filter2dGPU(filter, components).
+3. medFilter2dGPU(components);
+4. gammaCorrectionGPU(gamma = {r: 1, g: 1, b: 1}, components);
 
 ## Worker Thread Methods: 
 

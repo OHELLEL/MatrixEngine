@@ -1,9 +1,10 @@
 // API
+
 class MatrixEngine {  
     constructor() {
         let path = import.meta.url;
         this.path = path.replace("Matrix.js", "");   // "./matrixEngineJS"
-    }
+    }    
 
     // DOM OPERATIONS: 
     readImage(link) {
@@ -529,7 +530,7 @@ class MatrixEngine {
         }
     }
 
-    pushDownStream(matricies) {
+    pushDownStream() {
         let args    = arguments;
         let promise = new Promise( (resolve) => {
             let Data = [];
@@ -599,7 +600,7 @@ class MatrixEngine {
         let h;
         if (size%2 === 1) {
             if (type === "average") {
-                let aF     = size * size;
+                let aF      = size * size;
                     h       = new MatrixStruc(size, size, 1/aF);
             } else if (type === "gaussian") {
                 let center = Math.floor(size/2);
@@ -650,7 +651,7 @@ class MatrixEngine {
             } 
             return h.round(6);
         } else {
-            console.log("The size must be an odd integer")
+            return this.filterGen(type, size-1, param)
         }
     }
 
@@ -684,8 +685,7 @@ class MatrixEngine {
         
         output = this.matrix(coef);
         return output;
-    }
-    
+    }   
     // Other Data Types
     complex(re, im) {
         let output;
@@ -813,7 +813,6 @@ class MatrixEngine {
     }
 
     // Engine Methods:
-
     step({operation , args, components}) {
         let path    = this.path;
         let message = (args) ? { operation: operation , opArgs: args } : { operation: operation };
@@ -882,9 +881,752 @@ class MatrixEngine {
             return promise;
         }
     }  
-}
 
-// Super Classes:
+    readImageGPU(link, compnts = "rgb") {
+        let createShader = function(gl, type, source) {
+            let shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            let success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+            if (success) {
+              return shader;
+            }
+            console.log(gl.getShaderInfoLog(shader));
+            gl.deleteShader(shader);
+        }
+        
+        let createProgram = function(gl, vertexShader, fragmentShader) {
+            let program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            let success = gl.getProgramParameter(program, gl.LINK_STATUS);
+            if (success) {
+              return program;
+            }
+            console.log(gl.getProgramInfoLog(program));
+            gl.deleteProgram(program);
+        }
+
+        let promise      = new Promise( (resolve) => {
+            let image = new Image();
+            image.src = link;
+            image.onload = () => {
+                resolve(image);      
+            }
+        } ); 
+
+        let components = componentsCombination(compnts);
+        
+        promise = promise.then( (image) => {
+            let canvas          = document.createElement("canvas");
+            canvas.width        = image.width; 
+            canvas.height       = image.height; 
+            canvas.style.width  = image.width; 
+            canvas.style.height = image.height; 
+            let gl              = canvas.getContext("webgl");
+
+            let vertexShaderText = `
+                attribute vec4 a_xyPosition;
+                attribute vec2 a_xyColor;
+            
+                // fragment shader varyings
+                varying   vec2 v_xyColor;
+    
+                void main() {
+                    gl_Position = a_xyPosition;
+                    v_xyColor   = a_xyColor;
+                }
+            `
+            let fragmentShaderText = `
+                precision mediump float;
+            
+                // vertex shader varyings
+                varying vec2 v_xyColor;
+    
+                // sampler2D uniform
+                uniform sampler2D u_image;
+        
+                void main() {    
+                    gl_FragColor = vec4(texture2D(u_image, v_xyColor).${components}, 1.0) ;
+                }
+            `
+
+            let vertexShader   = createShader(gl, gl.VERTEX_SHADER,   vertexShaderText);
+            let fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderText);
+            let program        = createProgram(gl, vertexShader, fragmentShader);
+                gl.useProgram(program);
+            
+
+            // triangles xy
+            let corners        = [ -1, -1,       1, -1,      1, 1,       1,  1,      -1, 1,      -1, -1 ];
+            let cornersBuffer  = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, cornersBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(corners), gl.STATIC_DRAW);
+            // texture xy
+            let pixels         = [ 0, 0,      1, 0,       1, 1,       1, 1,       0, 1,       0, 0 ];
+            let pixelsBuffer   = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, pixelsBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pixels), gl.STATIC_DRAW);
+            // getting attributes locations and enabling them
+            let a_xyPositionLocation = gl.getAttribLocation(program, "a_xyPosition");
+            gl.enableVertexAttribArray(a_xyPositionLocation);
+            let a_xyColorLocation = gl.getAttribLocation(program, "a_xyColor");
+            gl.enableVertexAttribArray(a_xyColorLocation);
+            // 2 components per iteration, the data is 32bit floats, don't normalize the data, 0 = move forward size * sizeof(type) each iteration to get the next position, start at the beginning of the buffer
+            gl.bindBuffer(gl.ARRAY_BUFFER, cornersBuffer);
+            gl.vertexAttribPointer( a_xyPositionLocation, 2, gl.FLOAT, false, 0, 0 )
+            gl.bindBuffer(gl.ARRAY_BUFFER, pixelsBuffer);
+            gl.vertexAttribPointer(a_xyColorLocation, 2, gl.FLOAT, false, 0, 0);
+            // setting the webgl view port and clearing the canvas then using the created program
+            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+            gl.clearColor(0, 0, 0, 0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            // creating a texture and loading the image
+            let textureImage = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, textureImage);
+            //gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+            // setting interpolation parameters
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            // primitive type, offset, count
+            gl.drawArrays(gl.TRIANGLES, 0, corners.length/2);
+            let imageDt = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
+                gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, imageDt);
+            
+            let index;
+            let r = new MatrixStruc( gl.drawingBufferHeight, gl.drawingBufferWidth, (i, j) => {
+                index = (i * gl.drawingBufferWidth + j) * 4;
+                return imageDt[index+0];
+            })
+            
+            let g = new MatrixStruc( gl.drawingBufferHeight, gl.drawingBufferWidth, (i, j) => {
+                index = (i * gl.drawingBufferWidth + j) * 4;
+                return imageDt[index+1];
+            })
+            
+            let b = new MatrixStruc( gl.drawingBufferHeight, gl.drawingBufferWidth, (i, j) => {
+                index = (i * gl.drawingBufferWidth + j) * 4;
+                return imageDt[index+2];
+            })
+            
+            let a = new MatrixStruc( gl.drawingBufferHeight, gl.drawingBufferWidth, (i, j) => {
+                index = (i * gl.drawingBufferWidth + j) * 4;
+                return imageDt[index+3];
+            })
+            gl.deleteShader(vertexShader);
+            gl.deleteShader(fragmentShader);
+            gl.deleteProgram(program);
+            return [r, g, b, a];
+
+        } );
+
+        return promise;
+    }
+
+    filter2dGPU(filter, compnts = "rgb") {
+        let createShader = function(gl, type, source) {
+            let shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            let success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+            if (success) {
+              return shader;
+            }
+            console.log(gl.getShaderInfoLog(shader));
+            gl.deleteShader(shader);
+        }
+        
+        let createProgram = function(gl, vertexShader, fragmentShader) {
+            let program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            let success = gl.getProgramParameter(program, gl.LINK_STATUS);
+            if (success) {
+              return program;
+            }
+            console.log(gl.getProgramInfoLog(program));
+            gl.deleteProgram(program);
+        }
+
+        let kernel        = filter.transpose().serialize().mArray();
+        let kernelcenteri = Math.floor(filter.nR/2);
+        let kernelcenterj = Math.floor(filter.nC/2);
+        let kernelsize   = kernel.length;
+
+        let Li, Ui, Lj, Uj;
+        if (filter.nR > 1) {
+            if (filter.nR%2 === 1) {
+                Li =  -kernelcenteri;
+                Ui =   kernelcenteri;
+            } else {
+                Li = -(kernelcenteri - 1);
+                Ui =   kernelcenteri;
+            }
+        } else {
+            Li = 0;
+            Ui = 0;
+        }
+        
+        if(filter.nC > 1) {
+            if (filter.nC%2 === 1) {
+                Lj = -kernelcenterj;
+                Uj =  kernelcenterj;
+            } else {
+                Lj = -(kernelcenterj - 1);
+                Uj = kernelcenterj;
+            }
+        } else {
+            Lj = 0; 
+            Uj = 0;
+        }
+
+        return function(matrixArray) {
+            let promise      = new Promise( (resolve) => {
+                let index;
+                let image = new ImageData( matrixArray[0].nC, matrixArray[0].nR );
+                for (let i = 0; i < matrixArray[0].nR; i++) {
+                    for (let j = 0; j < matrixArray[0].nC; j++) {                        
+                        index = (i * matrixArray[0].nC + j) * 4;
+                        for (let l = 0; l < 4; l++) {
+                            image.data[index+l] = matrixArray[l].content[i][j];
+                        }    
+                    }
+                }
+                resolve(image);
+            });   
+            let components = componentsCombination(compnts);
+            promise = promise.then( (image) => {
+                console.log( "The '" + "filter2dGPU" + "' process has started ...")
+                let canvas          = document.createElement("canvas");
+                canvas.width        = image.width; 
+                canvas.height       = image.height; 
+                canvas.style.width  = image.width; 
+                canvas.style.height = image.height; 
+                let gl              = canvas.getContext("webgl");
+
+                let vertexShaderText = `
+                    attribute vec4 a_xyPosition;
+                    attribute vec2 a_xyColor;
+                    // fragment shader varyings
+                    varying   vec2 v_xyColor;
+                    void main() {
+                        gl_Position = a_xyPosition;
+                        v_xyColor   = a_xyColor;
+                    }
+                `  
+
+                let fragmentShaderText = `
+                    precision mediump float;
+                    // vertex shader varyings
+                    varying vec2 v_xyColor;
+                    // sampler2D uniform
+                    uniform sampler2D u_image;
+                    // uniforms
+                    uniform vec2      u_dimentions;
+                    uniform float     u_kernel[${kernelsize}];
+                    // internal variables
+                    vec2 onePixel; 
+                    vec4 colorSum; 
+                    void main() {
+                        onePixel = vec2(1.0, 1.0) / u_dimentions;
+                        colorSum = vec4(0, 0, 0, 0);
+                        for(int i=${Li}; i<=${Ui}; ++i) {
+                            for(int j=${Lj}; j<=${Uj}; j++){
+                                colorSum = colorSum + texture2D(u_image, v_xyColor + onePixel * vec2(i, j)) * u_kernel[ (i+1) * 3 + (j+1) ];
+                            }
+                        }
+                        gl_FragColor = vec4(colorSum.${components}, 1.0);
+                    }
+                `
+
+                let vertexShader   = createShader(gl, gl.VERTEX_SHADER,   vertexShaderText);
+                let fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderText);
+                let program        = createProgram(gl, vertexShader, fragmentShader);
+                    gl.useProgram(program);
+                // triangles xy
+                let corners        = [ -1, -1,       1, -1,      1, 1,       1,  1,      -1, 1,      -1, -1 ];
+                let cornersBuffer  = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, cornersBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(corners), gl.STATIC_DRAW);
+                // texture xy
+                let pixels         = [ 0, 0,      1, 0,       1, 1,       1, 1,       0, 1,       0, 0 ];
+                let pixelsBuffer   = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, pixelsBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pixels), gl.STATIC_DRAW);
+                // getting attributes locations and enabling them
+                let a_xyPositionLocation = gl.getAttribLocation(program, "a_xyPosition");
+                gl.enableVertexAttribArray(a_xyPositionLocation);
+                let a_xyColorLocation = gl.getAttribLocation(program, "a_xyColor");
+                gl.enableVertexAttribArray(a_xyColorLocation);
+                // 2 components per iteration, the data is 32bit floats, don't normalize the data, 0 = move forward size * sizeof(type) each iteration to get the next position, start at the beginning of the buffer
+                gl.bindBuffer(gl.ARRAY_BUFFER, cornersBuffer);
+                gl.vertexAttribPointer( a_xyPositionLocation, 2, gl.FLOAT, false, 0, 0 )
+                gl.bindBuffer(gl.ARRAY_BUFFER, pixelsBuffer);
+                gl.vertexAttribPointer(a_xyColorLocation, 2, gl.FLOAT, false, 0, 0);
+                // getting uniforms locations
+                let u_kernelLocation          = gl.getUniformLocation(program, "u_kernel[0]");
+                let u_imageDimentionsLocation = gl.getUniformLocation(program, "u_dimentions");
+                // uniform charging
+                gl.uniform1fv(u_kernelLocation, kernel);
+                gl.uniform2f(u_imageDimentionsLocation, image.width-1, image.height-1);
+                // setting the webgl view port and clearing the canvas then using the created program
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.clearColor(0, 0, 0, 0);
+                gl.clear(gl.COLOR_BUFFER_BIT);
+                // creating a texture and loading the image
+                let textureImage = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, textureImage);
+                //gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+                // setting interpolation parameters
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+                // primitive type, offset, count
+                gl.drawArrays(gl.TRIANGLES, 0, corners.length/2);
+                
+                let imageDt = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
+                    gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, imageDt);
+                
+                let index;
+                let r = new MatrixStruc( gl.drawingBufferHeight, gl.drawingBufferWidth, (i, j) => {
+                    index = (i * gl.drawingBufferWidth + j) * 4;
+                    return imageDt[index+0];
+                })
+                
+                let g = new MatrixStruc( gl.drawingBufferHeight, gl.drawingBufferWidth, (i, j) => {
+                    index = (i * gl.drawingBufferWidth + j) * 4;
+                    return imageDt[index+1];
+                })
+                
+                let b = new MatrixStruc( gl.drawingBufferHeight, gl.drawingBufferWidth, (i, j) => {
+                    index = (i * gl.drawingBufferWidth + j) * 4;
+                    return imageDt[index+2];
+                })
+                
+                let a = new MatrixStruc( gl.drawingBufferHeight, gl.drawingBufferWidth, (i, j) => {
+                    index = (i * gl.drawingBufferWidth + j) * 4;
+                    return imageDt[index+3];
+                })
+    
+                gl.deleteShader(vertexShader);
+                gl.deleteShader(fragmentShader);
+                gl.deleteProgram(program);
+                console.log( "The '" + "filter2dGPU" + "' process has ended")
+                return [r, g, b, a];
+            })
+            return promise;
+        }
+    }
+
+    medFilter2dGPU(compnts = "rgb") {
+
+        let createShader = function(gl, type, source) {
+            let shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            let success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+            if (success) {
+              return shader;
+            }
+            console.log(gl.getShaderInfoLog(shader));
+            gl.deleteShader(shader);
+        }
+        
+        let createProgram = function(gl, vertexShader, fragmentShader) {
+            let program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            let success = gl.getProgramParameter(program, gl.LINK_STATUS);
+            if (success) {
+              return program;
+            }
+            console.log(gl.getProgramInfoLog(program));
+            gl.deleteProgram(program);
+        }
+
+        return function(matrixArray) {
+            let promise, components;
+            promise      = new Promise( (resolve) => {
+                let index;
+                let image = new ImageData( matrixArray[0].nC, matrixArray[0].nR );
+                for (let i = 0; i < matrixArray[0].nR; i++) {
+                    for (let j = 0; j < matrixArray[0].nC; j++) {                        
+                        index = (i * matrixArray[0].nC + j) * 4;
+                        for (let l = 0; l < 4; l++) {
+                            image.data[index+l] = matrixArray[l].content[i][j];
+                        }    
+                    }
+                }
+                resolve(image);
+            });  
+            components = componentsCombination(compnts);
+            promise = promise.then( (image) => {
+                console.log( "The '" + "medFilter2dGPU" + "' process has started ...")
+                let canvas          = document.createElement("canvas");
+                canvas.width        = image.width; 
+                canvas.height       = image.height; 
+                canvas.style.width  = image.width; 
+                canvas.style.height = image.height; 
+                let gl              = canvas.getContext("webgl");
+                let vertexShaderText = `
+                    attribute vec4 a_xyPosition;
+                    attribute vec2 a_xyColor;
+                
+                    // fragment shader varyings
+                    varying   vec2 v_xyColor;
+        
+                    void main() {
+                        gl_Position = a_xyPosition;
+                        v_xyColor   = a_xyColor;
+                    }
+                `    
+                let fragmentShaderText = `
+                    precision mediump float;
+                    // vertex shader varyings
+                    varying vec2 v_xyColor;
+                    // sampler2D 
+                    uniform sampler2D u_image;
+                    uniform vec2  u_dimentions;
+                    // internal variables
+                    vec2 onePixel; 
+                    int  index;
+            
+                    vec4 median(vec4 c1, vec4 c2, vec4 c3) { 
+                        vec4 color = vec4(1.0, 1.0, 1.0, 1.0);
+                        for (int k = 0; k < 3; k++) {
+                            if (c1[k] >= c2[k] && c1[k] >= c3[k]) {
+                                if (c2[k] >= c3[k]) {
+                                    color[k] = c2[k];
+                                } else {
+                                    color[k] = c3[k];
+                                }
+                            } else if (c2[k] >= c1[k] && c2[k] >= c3[k]) {
+                                if (c1[k] >= c3[k]) {
+                                    color[k] = c1[k];
+                                } else {
+                                    color[k] = c3[k];
+                                }
+                            } else if (c3[k] >= c1[k] && c3[k] >= c2[k]) {
+                                if (c1[k] >= c2[k]) {
+                                    color[k] = c1[k];
+                                } else {
+                                    color[k] = c2[k];
+                                }
+                            }                          
+                        };
+                        return color;
+                    }
+
+                    vec4 c1;
+                    vec4 c2;
+                    vec4 c3;
+                    vec4 med0;
+                    vec4 med1;
+                    vec4 med2;
+                    vec4 med;
+                    void main() {    
+                        onePixel = vec2(1.0, 1.0) / u_dimentions;
+                        c1 = texture2D(u_image, v_xyColor + onePixel * vec2(-1, -1));
+                        c2 = texture2D(u_image, v_xyColor + onePixel * vec2( 0, -1));
+                        c3 = texture2D(u_image, v_xyColor + onePixel * vec2(+1, -1));
+                        med0 = median(c1, c2, c3);
+                        c1 = texture2D(u_image, v_xyColor + onePixel * vec2(-1,  0));
+                        c2 = texture2D(u_image, v_xyColor + onePixel * vec2( 0,  0));
+                        c3 = texture2D(u_image, v_xyColor + onePixel * vec2(+1,  0));
+                        med1 = median(c1, c2, c3);
+                        c1 = texture2D(u_image, v_xyColor + onePixel * vec2(-1,  1));
+                        c2 = texture2D(u_image, v_xyColor + onePixel * vec2( 0,  1));
+                        c3 = texture2D(u_image, v_xyColor + onePixel * vec2(+1,  1));
+                        med2 = median(c1, c2, c3);
+
+                        gl_FragColor = median(med0, med1, med2).${components}a;
+                    }
+                `
+                let vertexShader   = createShader(gl, gl.VERTEX_SHADER,   vertexShaderText);
+                let fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderText);
+                let program        = createProgram(gl, vertexShader, fragmentShader);
+                    gl.useProgram(program);
+                // triangles xy
+                let corners        = [ -1, -1,       1, -1,      1, 1,       1,  1,      -1, 1,      -1, -1 ];
+                let cornersBuffer  = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, cornersBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(corners), gl.STATIC_DRAW);
+                // texture xy
+                let pixels         = [ 0, 0,      1, 0,       1, 1,       1, 1,       0, 1,       0, 0 ];
+                let pixelsBuffer   = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, pixelsBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pixels), gl.STATIC_DRAW);
+                // getting attributes locations and enabling them
+                let a_xyPositionLocation = gl.getAttribLocation(program, "a_xyPosition");
+                gl.enableVertexAttribArray(a_xyPositionLocation);
+                let a_xyColorLocation = gl.getAttribLocation(program, "a_xyColor");
+                gl.enableVertexAttribArray(a_xyColorLocation);
+                // 2 components per iteration, the data is 32bit floats, don't normalize the data, 0 = move forward size * sizeof(type) each iteration to get the next position, start at the beginning of the buffer
+                gl.bindBuffer(gl.ARRAY_BUFFER, cornersBuffer);
+                gl.vertexAttribPointer( a_xyPositionLocation, 2, gl.FLOAT, false, 0, 0 )
+                gl.bindBuffer(gl.ARRAY_BUFFER, pixelsBuffer);
+                gl.vertexAttribPointer(a_xyColorLocation, 2, gl.FLOAT, false, 0, 0);
+                // getting uniforms locations
+                let u_imageDimentionsLocation = gl.getUniformLocation(program, "u_dimentions");
+                // uniform charging
+                gl.uniform2f(u_imageDimentionsLocation, image.width-1, image.height-1);
+                // setting the webgl view port and clearing the canvas then using the created program
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.clearColor(0, 0, 0, 0);
+                gl.clear(gl.COLOR_BUFFER_BIT);
+                // creating a texture and loading the image
+                let textureImage = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, textureImage);
+                //gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+                // setting interpolation parameters
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+                // primitive type, offset, count
+                gl.drawArrays(gl.TRIANGLES, 0, corners.length/2);
+                
+                let imageDt = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
+                    gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, imageDt);
+                
+                let index;
+                let r = new MatrixStruc( gl.drawingBufferHeight, gl.drawingBufferWidth, (i, j) => {
+                    index = (i * gl.drawingBufferWidth + j) * 4;
+                    return imageDt[index+0];
+                })
+                
+                let g = new MatrixStruc( gl.drawingBufferHeight, gl.drawingBufferWidth, (i, j) => {
+                    index = (i * gl.drawingBufferWidth + j) * 4;
+                    return imageDt[index+1];
+                })
+                
+                let b = new MatrixStruc( gl.drawingBufferHeight, gl.drawingBufferWidth, (i, j) => {
+                    index = (i * gl.drawingBufferWidth + j) * 4;
+                    return imageDt[index+2];
+                })
+                
+                let a = new MatrixStruc( gl.drawingBufferHeight, gl.drawingBufferWidth, (i, j) => {
+                    index = (i * gl.drawingBufferWidth + j) * 4;
+                    return imageDt[index+3];
+                })
+    
+                gl.deleteShader(vertexShader);
+                gl.deleteShader(fragmentShader);
+                gl.deleteProgram(program);
+                console.log( "The '" + "medFilter2dGPU" + "' process has ended")
+                return [r, g, b, a];
+            })
+            return promise;
+        }
+    }
+
+    gammaCorrectionGPU(y = {r: 1, g: 1, b: 1}, compnts = "rgb") {
+        let createShader = function(gl, type, source) {
+            let shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            let success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+            if (success) {
+              return shader;
+            }
+            console.log(gl.getShaderInfoLog(shader));
+            gl.deleteShader(shader);
+        }
+        
+        let createProgram = function(gl, vertexShader, fragmentShader) {
+            let program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            let success = gl.getProgramParameter(program, gl.LINK_STATUS);
+            if (success) {
+              return program;
+            }
+            console.log(gl.getProgramInfoLog(program));
+            gl.deleteProgram(program);
+        }
+
+        let gamma;
+        if (y !== undefined) {
+            if (typeof(y) === "object") {
+                gamma = {r: 1, g: 1, b: 1};
+                if (y.r !== undefined) {
+                    gamma.r = y.r;
+                } else {
+                    gamma.r = 1;
+                }
+                if (y.g !== undefined) {
+                    gamma.g = y.g;
+                } else {
+                    gamma.g = 1;
+                }
+                if (y.b !== undefined) {
+                    gamma.b = y.b;
+                } else {
+                    gamma.b = 1;
+                }
+            } else if (typeof(y) === "number") {
+                gamma = {r: y, g: y, b: y};
+            }
+        } else {
+            gamma = {r: 1, g: 1, b: 1};
+        }
+
+    
+
+        return function(matrixArray) {
+            let promise, components;
+            promise      = new Promise( (resolve) => {
+                let index;
+                let image = new ImageData( matrixArray[0].nC, matrixArray[0].nR );
+                for (let i = 0; i < matrixArray[0].nR; i++) {
+                    for (let j = 0; j < matrixArray[0].nC; j++) {                        
+                        index = (i * matrixArray[0].nC + j) * 4;
+                        for (let l = 0; l < 4; l++) {
+                            image.data[index+l] = matrixArray[l].content[i][j];
+                        }    
+                    }
+                }
+                resolve(image);
+            });  
+            components = componentsCombination(compnts);
+            promise = promise.then( (image) => {
+                console.log( "The '" + "medFilter2dGPU" + "' process has started ...")
+                let canvas          = document.createElement("canvas");
+                canvas.width        = image.width; 
+                canvas.height       = image.height; 
+                canvas.style.width  = image.width; 
+                canvas.style.height = image.height; 
+                let gl              = canvas.getContext("webgl");
+                let vertexShaderText = `
+                    attribute vec4 a_xyPosition;
+                    attribute vec2 a_xyColor;
+                
+                    // fragment shader varyings
+                    varying   vec2 v_xyColor;
+        
+                    void main() {
+                        gl_Position = a_xyPosition;
+                        v_xyColor   = a_xyColor;
+                    }
+                `    
+                let fragmentShaderText = `
+                    precision mediump float;
+                    // vertex shader varyings
+                    varying vec2 v_xyColor;
+                    // sampler2D 
+                    uniform sampler2D u_image;
+                    uniform float gammaR;
+                    uniform float gammaG;
+                    uniform float gammaB;
+                    // internals
+                    vec4 color;
+                    void main() {    
+                        color        = texture2D(u_image, v_xyColor);
+                        color[0]     = pow( color[0] , gammaR);
+                        color[1]     = pow( color[1] , gammaG);
+                        color[2]     = pow( color[2] , gammaB);
+                        gl_FragColor = color.${components}a;
+                    }
+                `
+                
+                let vertexShader   = createShader(gl, gl.VERTEX_SHADER,   vertexShaderText);
+                let fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderText);
+                let program        = createProgram(gl, vertexShader, fragmentShader);
+                gl.useProgram(program);
+
+                // triangles xy
+                let corners        = [ -1, -1,       1, -1,      1, 1,       1,  1,      -1, 1,      -1, -1 ];
+                let cornersBuffer  = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, cornersBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(corners), gl.STATIC_DRAW);
+                // texture xy
+                let pixels         = [ 0, 0,      1, 0,       1, 1,       1, 1,       0, 1,       0, 0 ];
+                let pixelsBuffer   = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, pixelsBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pixels), gl.STATIC_DRAW);
+                // getting attributes locations and enabling them
+                let a_xyPositionLocation = gl.getAttribLocation(program, "a_xyPosition");
+                gl.enableVertexAttribArray(a_xyPositionLocation);
+                let a_xyColorLocation = gl.getAttribLocation(program, "a_xyColor");
+                gl.enableVertexAttribArray(a_xyColorLocation);
+                
+                // 2 components per iteration, the data is 32bit floats, don't normalize the data, 0 = move forward size * sizeof(type) each iteration to get the next position, start at the beginning of the buffer
+                gl.bindBuffer(gl.ARRAY_BUFFER, cornersBuffer);
+                gl.vertexAttribPointer( a_xyPositionLocation, 2, gl.FLOAT, false, 0, 0 )
+                gl.bindBuffer(gl.ARRAY_BUFFER, pixelsBuffer);
+                gl.vertexAttribPointer(a_xyColorLocation, 2, gl.FLOAT, false, 0, 0);
+
+                // getting uniforms locations
+                let u_gammaRLocation = gl.getUniformLocation(program, "gammaR");
+                gl.uniform1f(u_gammaRLocation, gamma.r);
+                let u_gammaGLocation = gl.getUniformLocation(program, "gammaG");
+                gl.uniform1f(u_gammaGLocation, gamma.g);
+                let u_gammaBLocation = gl.getUniformLocation(program, "gammaB");
+                gl.uniform1f(u_gammaBLocation, gamma.b);
+                
+                
+                // setting the webgl view port and clearing the canvas then using the created program
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.clearColor(0, 0, 0, 0);
+                gl.clear(gl.COLOR_BUFFER_BIT);
+                
+                // creating a texture and loading the image
+                let textureImage = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, textureImage);
+                //gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+                // setting interpolation parameters
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+                // primitive type, offset, count
+                gl.drawArrays(gl.TRIANGLES, 0, corners.length/2);
+                
+                let imageDt = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
+                    gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, imageDt);
+                
+                let index;
+                let r = new MatrixStruc( gl.drawingBufferHeight, gl.drawingBufferWidth, (i, j) => {
+                    index = (i * gl.drawingBufferWidth + j) * 4;
+                    return imageDt[index+0];
+                })
+                
+                let g = new MatrixStruc( gl.drawingBufferHeight, gl.drawingBufferWidth, (i, j) => {
+                    index = (i * gl.drawingBufferWidth + j) * 4;
+                    return imageDt[index+1];
+                })
+                
+                let b = new MatrixStruc( gl.drawingBufferHeight, gl.drawingBufferWidth, (i, j) => {
+                    index = (i * gl.drawingBufferWidth + j) * 4;
+                    return imageDt[index+2];
+                })
+                
+                let a = new MatrixStruc( gl.drawingBufferHeight, gl.drawingBufferWidth, (i, j) => {
+                    index = (i * gl.drawingBufferWidth + j) * 4;
+                    return imageDt[index+3];
+                })
+    
+                gl.deleteShader(vertexShader);
+                gl.deleteShader(fragmentShader);
+                gl.deleteProgram(program);
+                console.log( "The '" + "medFilter2dGPU" + "' process has ended")
+                return [r, g, b, a];
+            })
+            return promise;
+        }
+    }
+}
 
 class ComplexOperations {
     isNull() {
@@ -3185,6 +3927,28 @@ class PointSet extends PointSetOperations{
 }
 
 // Utility Functions: 
+function componentsCombination(combs) {
+    let components;
+    let combinations1 = ["rrr", "grr", "brr", "rgr", "ggr", "bgr", "rbr","gbr", "bbr", "rrg", "grg", "brg", "rgg", "ggg", "bgg", "rbg", "gbg", "bbg", "rrb", "grb", "brb", "rgb", "ggb", "bgb", "rbb", "gbb", "bbb"];
+    let combinations2 = ["rr", "rg", "rb", "gr", "gg", "gb", "br", "bg", "bb"];
+    let combinations3 = ["r", "g", "b"];
+
+    if ( combinations1.indexOf(combs) !== -1) {
+        components = combs;
+    } else if ( combinations2.indexOf(combs) !== -1 ) {
+        components = combs.split("");
+        components.push(components[components.length-1]);
+        components = components.join("");
+    } else if  ( combinations3.indexOf(combs) !== -1 ) {
+        components = combs.split("");
+        components.push(components[components.length-1]);
+        components.push(components[components.length-1]);
+        components = components.join("");
+    } else {
+        components = "rgb";
+    }
+    return components;
+}
 
 function radToDeg(rads) {
     if (rads.constructor.name === "MatrixStruc") {

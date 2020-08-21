@@ -1754,9 +1754,11 @@ class MatrixOperations {
             console.log( "The min value must be less than: " + mimx.min + ", and the max value must be greater than: " + mimx.max + ", for contrast stretching operation");
             return this.clone();
         }
+        
         output = new MatrixStruc( this.nR, this.nC , 0); 
         nR     = output.nR; 
         nC     = output.nC;
+        
         for (let i = 0; i < nR; i++) {
             for (let j = 0; j < nC; j++) {
                 value   = intermediate.data(i, j);        
@@ -1764,6 +1766,7 @@ class MatrixOperations {
                 output.data(i,j, current);
             }
         }
+
         return output;
     }
 
