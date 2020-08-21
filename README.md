@@ -1,6 +1,6 @@
 # What is MatrixEngine?
 
-MatrixEngine is a rich yet simple javascript library for Data/Image Processing, MatrixEngine is declarative and asynchronous, and it uses web workers to process data, so it doesn't block the main thread. 
+MatrixEngine is a rich yet simple javascript library for Data/Image Processing, MatrixEngine is declarative and asynchronous, and it uses web workers and the GPU to process data, so it doesn't block the main thread. 
 
 # Browser Support: 
 
